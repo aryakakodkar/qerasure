@@ -51,16 +51,13 @@ Step 3: X (SE), Z (SE)
 */
 
 void RotatedSurfaceCode::build_stabilizers() {
-    gates_.resize(4); // 4 steps in the syndrome extraction circuit for the rotated surface code
     QubitIndex gates_per_step = (8 + 12 * (distance_ - 2) + 4 * (distance_ - 2) * (distance_ - 2))/4; // 8 for corners, 12 for edges, 4 for interior
+    gates_.resize(gates_per_step * 4); // 4 steps in the schedule
 
-    for (auto& gate_step : gates_) {
-        gate_step.resize(gates_per_step, {0, 0});
-    }
+    step_pointers_ = {gates_.data() + gates_per_step * 0, gates_.data() + gates_per_step * 1, 
+        gates_.data() + gates_per_step * 2, gates_.data() + gates_per_step * 3};
 
     for (size_t step = 0; step < 4; step++) {
-        std::vector<std::pair<QubitIndex, QubitIndex>>& current_step = gates_[step];
-
         std::pair<QubitIndex, QubitIndex> x_gate_direction;
         std::pair<QubitIndex, QubitIndex> z_gate_direction;
 
@@ -88,14 +85,14 @@ void RotatedSurfaceCode::build_stabilizers() {
             if (coord_to_index_.find({index_to_coord_[idx][0] + x_gate_direction.first, index_to_coord_[idx][1] + x_gate_direction.second}) == coord_to_index_.end()) {
                 continue; // Skip if the target data qubit is out of bounds
             }
-            current_step[gate_idx++] = {idx, coord_to_index_[{index_to_coord_[idx][0] + x_gate_direction.first, index_to_coord_[idx][1] + x_gate_direction.second}]};
+            *(step_pointers_[step] + gate_idx++) = {idx, coord_to_index_[{index_to_coord_[idx][0] + x_gate_direction.first, index_to_coord_[idx][1] + x_gate_direction.second}]};
         }
 
         for (QubitIndex idx = z_anc_offset_; idx < num_qubits_; idx++) { 
             if (coord_to_index_.find({index_to_coord_[idx][0] + z_gate_direction.first, index_to_coord_[idx][1] + z_gate_direction.second}) == coord_to_index_.end()) {
                 continue; // Skip if the target data qubit is out of bounds
             }
-            current_step[gate_idx++] = {coord_to_index_[{index_to_coord_[idx][0] + z_gate_direction.first, index_to_coord_[idx][1] + z_gate_direction.second}], idx};
+            *(step_pointers_[step] + gate_idx++) = {coord_to_index_[{index_to_coord_[idx][0] + z_gate_direction.first, index_to_coord_[idx][1] + z_gate_direction.second}], idx};
         }
     }
 }

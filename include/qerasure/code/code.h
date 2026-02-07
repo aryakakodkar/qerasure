@@ -31,7 +31,7 @@ class RotatedSurfaceCode {
 
         const std::vector<Stabilizer>& stabilizers() const noexcept { return stabilizers_; }
 
-        const std::vector<std::vector<std::pair<QubitIndex, QubitIndex>>>& gates() const noexcept { return gates_; }
+        const std::vector<std::pair<QubitIndex, QubitIndex>>& gates() const noexcept { return gates_; }
 
         const std::unordered_map<Stabilizer, QubitIndex>& coord_to_index() const noexcept { return coord_to_index_; }
         const std::unordered_map<QubitIndex, Stabilizer>& index_to_coord() const noexcept { return index_to_coord_; }
@@ -47,7 +47,8 @@ class RotatedSurfaceCode {
         std::unordered_map<Stabilizer, QubitIndex> coord_to_index_; // maps (x, y) coordinates to qubit indices
         std::unordered_map<QubitIndex, Stabilizer> index_to_coord_; // maps qubit indices to (x, y) coordinates
 
-        std::vector<std::vector<std::pair<QubitIndex, QubitIndex>>> gates_;
+        std::vector<std::pair<QubitIndex, QubitIndex>> gates_; // A flat vector of CNOT gates in the syndrome extraction circuit
+        std::vector<std::pair<QubitIndex, QubitIndex>*> step_pointers_; // pointers to the starting points of each syndrome extraction step in the gates_ vector
 
         std::size_t x_anc_offset_; // offset for x-ancilla qubit indices
         std::size_t z_anc_offset_; // offset for z-ancilla qubit indices

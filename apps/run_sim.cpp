@@ -8,14 +8,12 @@ int main() {
     
     RotatedSurfaceCode code(distance);
 
-    const std::vector<std::vector<std::pair<QubitIndex, QubitIndex>>>& gates = code.gates();
+    const std::vector<std::pair<QubitIndex, QubitIndex>>& gates = code.gates();
 
-    for (std::size_t i = 0; i < 4; i++) {
-        std::cout << "Step " << i << ":\n";
-        for (const auto& gate : gates[i]) {
-            std::cout << "  CNOT between qubits " << gate.first << " and " << gate.second << "\n";
-        }
-        std::cout << "\n";
+    for (const auto& gate : gates) {
+        std::cout << "  CNOT between qubits " << gate.first << " and " << gate.second << "\n";
     }
+    std::cout << "\n";
+
     return 0;
 }
