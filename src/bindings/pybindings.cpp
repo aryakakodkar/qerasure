@@ -11,7 +11,25 @@ PYBIND11_MODULE(qerasure_python, m) {
         .def(py::init<std::size_t>(), py::arg("distance"))
         .def_property_readonly("distance", &RotatedSurfaceCode::distance)
         .def_property_readonly("num_qubits", &RotatedSurfaceCode::num_qubits)
-        .def_property_readonly("gates", &RotatedSurfaceCode::gates)
+        .def_property_readonly("gates", [](const RotatedSurfaceCode& code) {
+            const auto& gates_flat = code.gates();
+            std::size_t distance = code.distance();
+            std::size_t gates_per_step = 2 + 3 * (distance - 2) + (distance - 2) * (distance - 2);
+            
+            py::list result;
+            for (size_t step = 0; step < 4; step++) {
+                py::list step_gates;
+                for (size_t i = 0; i < gates_per_step; i++) {
+                    size_t idx = step * gates_per_step + i;
+                    if (idx < gates_flat.size()) {
+                        const auto& gate = gates_flat[idx];
+                        step_gates.append(py::make_tuple(gate.first, gate.second));
+                    }
+                }
+                result.append(step_gates);
+            }
+            return result;
+        })
         .def_property_readonly("coord_to_index", [](const RotatedSurfaceCode& code) {
             const auto& m = code.coord_to_index();
             py::dict d;
