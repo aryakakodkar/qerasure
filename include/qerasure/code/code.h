@@ -2,53 +2,50 @@
 #include <map>
 #include <unordered_map>
 
-// Hash function for std::vector<T> so it can be used as a key in std::unordered_map
-namespace std {
-    template <typename T>
-    struct hash<std::vector<T>> {
-        std::size_t operator()(const std::vector<T>& v) const {
-            std::size_t seed = v.size();
-            for (const auto& elem : v) {
-                seed ^= std::hash<T>{}(elem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            }
-            return seed;
-        }
-    };
-}
+#ifndef QERASURE_NAMESPACE
+#define QERASURE_NAMESPACE
 
 using QubitIndex = std::size_t;
 using Stabilizer = std::vector<QubitIndex>;
 
-#ifndef QERASURE_CODE_H
-#define QERASURE_CODE_H
+#endif // QERASURE_NAMESPACE
+
+#ifndef ROTATED_SURFACE_CODE
+#define ROTATED_SURFACE_CODE
+
+// Hash function for std::pair<QubitIndex, QubitIndex> to enable use as unordered_map key
+struct PairHash {
+    std::size_t operator()(const std::pair<QubitIndex, QubitIndex>& p) const {
+        std::size_t h1 = std::hash<QubitIndex>{}(p.first);
+        std::size_t h2 = std::hash<QubitIndex>{}(p.second);
+        return h1 ^ (h2 << 1);
+    }
+};
 
 class RotatedSurfaceCode {
     public:
         explicit RotatedSurfaceCode(std::size_t distance);
 
-        const std::size_t& distance() const noexcept { return distance_; }
-        const std::size_t& num_qubits() const noexcept { return num_qubits_; }
-
-        const std::vector<Stabilizer>& stabilizers() const noexcept { return stabilizers_; }
+        const std::size_t distance() const noexcept { return distance_; }
+        const std::size_t num_qubits() const noexcept { return num_qubits_; }
 
         const std::vector<std::pair<QubitIndex, QubitIndex>>& gates() const noexcept { return gates_; }
 
-        const std::unordered_map<Stabilizer, QubitIndex>& coord_to_index() const noexcept { return coord_to_index_; }
-        const std::unordered_map<QubitIndex, Stabilizer>& index_to_coord() const noexcept { return index_to_coord_; }
+        const std::unordered_map<std::pair<QubitIndex, QubitIndex>, QubitIndex, PairHash>& coord_to_index() const noexcept { return coord_to_index_; }
+        const std::unordered_map<QubitIndex, std::pair<QubitIndex, QubitIndex>>& index_to_coord() const noexcept { return index_to_coord_; }
 
         const std::size_t& x_anc_offset() const noexcept { return x_anc_offset_; }
         const std::size_t& z_anc_offset() const noexcept { return z_anc_offset_; }
 
     private:
-        std::size_t distance_;
-        std::size_t num_qubits_;
-        std::vector<Stabilizer> stabilizers_;
+        std::size_t distance_; // code distance
+        std::size_t num_qubits_; // total number of qubits in the code (2 * d**2 - 1)
         
-        std::unordered_map<Stabilizer, QubitIndex> coord_to_index_; // maps (x, y) coordinates to qubit indices
-        std::unordered_map<QubitIndex, Stabilizer> index_to_coord_; // maps qubit indices to (x, y) coordinates
+        std::unordered_map<std::pair<QubitIndex, QubitIndex>, QubitIndex, PairHash> coord_to_index_; // maps (x, y) coordinates to qubit indices
+        std::unordered_map<QubitIndex, std::pair<QubitIndex, QubitIndex>> index_to_coord_; // maps qubit indices to (x, y) coordinates
 
         std::vector<std::pair<QubitIndex, QubitIndex>> gates_; // A flat vector of CNOT gates in the syndrome extraction circuit
-        std::vector<std::pair<QubitIndex, QubitIndex>*> step_pointers_; // pointers to the starting points of each syndrome extraction step in the gates_ vector
+        std::array<std::vector<std::pair<QubitIndex, QubitIndex>>::iterator, 4> step_iters_; // Iterators delimiting the 4 steps in the syndrome extraction schedule
 
         std::size_t x_anc_offset_; // offset for x-ancilla qubit indices
         std::size_t z_anc_offset_; // offset for z-ancilla qubit indices
@@ -59,4 +56,4 @@ class RotatedSurfaceCode {
         void build_stabilizers();
 };
 
-#endif // QERASURE_CODE_H
+#endif // ROTATED_SURFACE_CODE

@@ -3,6 +3,13 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 
 class RotatedSurfaceCode:
+    """
+    A Python wrapper around the C++ RotatedSurfaceCode class.
+
+    This class provides a Python interface to the C++ implementation of the rotated surface code.
+    It initializes the code with a given distance and exposes properties such as the number of qubits,
+    the offsets for X and Z ancillas, the mapping from qubit indices to coordinates, and the gates in the syndrome extraction circuit.
+    """
     def __init__(self, distance):
         self.cpp_code = _CPP_RotatedSurfaceCode(distance)
         self.num_qubits = self.cpp_code.num_qubits
@@ -62,3 +69,7 @@ class RotatedSurfaceCode:
             
         mpl.rcParams['font.family'] = 'DejaVu Sans'  # Clean sans-serif font
         mpl.rcParams['font.size'] = 14
+
+    def draw_gates(self):
+        # This function will visualize the gates in the code object
+        pass
