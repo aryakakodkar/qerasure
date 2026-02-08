@@ -11,7 +11,14 @@ int main() {
 
     std::cout << "Creating a new noise model...\n\n";
 
-    NoiseParams noise = build_noise_model({.p_two_qubit_erasure = 0.01, .p_erasure_check_error = 0.05});
+    NoiseParams noise;
+    noise.set("p_erasure_check_error", 0.05);
+    noise.set("p_two_qubit_erasure", 0.01);
+
+    std::cout << "Noise model parameters:\n";
+    std::cout << "p_erasure_check_error: " << noise.get("p_erasure_check_error") << "\n";
+    std::cout << "p_two_qubit_erasure: " << noise.get("p_two_qubit_erasure") << "\n";
+    std::cout << "p_single_qubit_depolarize: " << noise.get("p_single_qubit_depolarize") << "\n";
 
     return 0;
 }

@@ -52,14 +52,21 @@ PYBIND11_MODULE(qerasure_python, m) {
         .def_property_readonly("x_anc_offset", &RotatedSurfaceCode::x_anc_offset)
         .def_property_readonly("z_anc_offset", &RotatedSurfaceCode::z_anc_offset);
 
-        py::class_<NoiseParams>(m, "NoiseParams")
-            .def(py::init<>())
-            .def_readonly("p_single_qubit_depolarize", &NoiseParams::p_single_qubit_depolarize)
-            .def_readonly("p_two_qubit_depolarize", &NoiseParams::p_two_qubit_depolarize)
-            .def_readonly("p_measurement_error", &NoiseParams::p_measurement_error)
-            .def_readonly("p_single_qubit_erasure", &NoiseParams::p_single_qubit_erasure)
-            .def_readonly("p_two_qubit_erasure", &NoiseParams::p_two_qubit_erasure)
-            .def_readonly("p_erasure_check_error", &NoiseParams::p_erasure_check_error);
-
-        m.def("build_noise_model", &build_noise_model, py::arg("params") = NoiseParams{});
+    py::class_<NoiseParams>(m, "NoiseParams")
+        .def(py::init<>())
+        .def("set", &NoiseParams::set, py::arg("key"), py::arg("value"))
+        .def("get", &NoiseParams::get, py::arg("key"))
+        .def("__repr__", [](const NoiseParams& params) {
+            std::string repr = "NoiseParams(";
+            std::unordered_map<std::string, double> probs = params.get_all();
+            for (const auto& kv : probs) {
+                repr += kv.first + "=" + std::to_string(kv.second) + ", ";
+            }
+            if (!probs.empty()) {
+                repr.pop_back(); // Remove last space
+                repr.pop_back(); // Remove last comma
+            }
+            repr += ")";
+            return repr;
+        });
 }
