@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include "qerasure/code/code.h"
+#include "qerasure/noise/noise.h"
 
 namespace py = pybind11;
 
@@ -50,4 +51,15 @@ PYBIND11_MODULE(qerasure_python, m) {
         })
         .def_property_readonly("x_anc_offset", &RotatedSurfaceCode::x_anc_offset)
         .def_property_readonly("z_anc_offset", &RotatedSurfaceCode::z_anc_offset);
+
+        py::class_<NoiseParams>(m, "NoiseParams")
+            .def(py::init<>())
+            .def_readonly("p_single_qubit_depolarize", &NoiseParams::p_single_qubit_depolarize)
+            .def_readonly("p_two_qubit_depolarize", &NoiseParams::p_two_qubit_depolarize)
+            .def_readonly("p_measurement_error", &NoiseParams::p_measurement_error)
+            .def_readonly("p_single_qubit_erasure", &NoiseParams::p_single_qubit_erasure)
+            .def_readonly("p_two_qubit_erasure", &NoiseParams::p_two_qubit_erasure)
+            .def_readonly("p_erasure_check_error", &NoiseParams::p_erasure_check_error);
+
+        m.def("build_noise_model", &build_noise_model, py::arg("params") = NoiseParams{});
 }

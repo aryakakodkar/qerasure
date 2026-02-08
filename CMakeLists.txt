@@ -11,6 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # -------------------------
 add_library(qerasure
     src/code/code.cpp
+    src/noise/noise.cpp
 )
 
 # Let users include headers as: #include "qerasure/code/RotatedSurfaceCode.hpp"

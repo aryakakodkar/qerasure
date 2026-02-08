@@ -1,4 +1,5 @@
 #include "qerasure/code/code.h"
+#include "qerasure/noise/noise.h"
 #include <iostream>
 
 int main() {
@@ -8,12 +9,9 @@ int main() {
     
     RotatedSurfaceCode code(distance);
 
-    const std::vector<std::pair<QubitIndex, QubitIndex>>& gates = code.gates();
+    std::cout << "Creating a new noise model...\n\n";
 
-    for (const auto& gate : gates) {
-        std::cout << "  CNOT between qubits " << gate.first << " and " << gate.second << "\n";
-    }
-    std::cout << "\n";
+    NoiseParams noise = build_noise_model({.p_two_qubit_erasure = 0.01, .p_erasure_check_error = 0.05});
 
     return 0;
 }
