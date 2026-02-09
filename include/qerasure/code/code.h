@@ -2,13 +2,10 @@
 #include <map>
 #include <unordered_map>
 
-#ifndef QERASURE_NAMESPACE
-#define QERASURE_NAMESPACE
+size_t NO_PARTNER = std::numeric_limits<size_t>::max(); // Value to represent no partner for a stabilizer
 
 using QubitIndex = std::size_t;
 using Stabilizer = std::vector<QubitIndex>;
-
-#endif // QERASURE_NAMESPACE
 
 #ifndef ROTATED_SURFACE_CODE
 #define ROTATED_SURFACE_CODE
@@ -46,6 +43,8 @@ class RotatedSurfaceCode {
 
         std::vector<std::pair<QubitIndex, QubitIndex>> gates_; // A flat vector of CNOT gates in the syndrome extraction circuit
         std::array<std::vector<std::pair<QubitIndex, QubitIndex>>::iterator, 4> step_iters_; // Iterators delimiting the 4 steps in the syndrome extraction schedule
+
+        std::vector<std::size_t> partner_map_; // Maps each qubit to its partner in the gate
 
         std::size_t x_anc_offset_; // offset for x-ancilla qubit indices
         std::size_t z_anc_offset_; // offset for z-ancilla qubit indices
