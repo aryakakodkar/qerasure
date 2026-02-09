@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
 
     std::size_t mem_usage = 0;
     for (const auto& shot : result.sparse_erasures) {
-        mem_usage += shot.size() * sizeof(SimEvent);
+        mem_usage += shot.size() * sizeof(ErasureSimEvent);
     }
     mem_usage += result.erasure_timestep_offsets.size() * sizeof(std::vector<std::size_t>);
     for (const auto& timestep_offsets : result.erasure_timestep_offsets) {

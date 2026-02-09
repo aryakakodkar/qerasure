@@ -14,6 +14,9 @@ class NoiseParams:
         for err_mech, prob in kwargs.items():
             self._cpp_noise_params.set(err_mech, prob)
 
+    def _to_cpp_noise_params(self):
+        return self._cpp_noise_params
+
     def set(self, err_mech, prob):
         self._cpp_noise_params.set(err_mech, prob)
 

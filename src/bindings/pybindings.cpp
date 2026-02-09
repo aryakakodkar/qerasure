@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include "qerasure/code/code.h"
 #include "qerasure/noise/noise.h"
+#include "qerasure/simulators/erasure_simulator.h"
 
 namespace py = pybind11;
 
@@ -80,4 +81,30 @@ PYBIND11_MODULE(qerasure_python, m) {
             repr += ")";
             return repr;
         });
+
+    py::class_<ErasureSimParams>(m, "ErasureSimParams")
+        .def(py::init<const RotatedSurfaceCode&, const NoiseParams&, std::size_t, std::size_t>(),
+             py::arg("code"), py::arg("noise"), py::arg("qec_rounds"), py::arg("shots"))
+        .def_readonly("code", &ErasureSimParams::code)
+        .def_readonly("noise", &ErasureSimParams::noise)
+        .def_readonly("qec_rounds", &ErasureSimParams::qec_rounds)
+        .def_readonly("shots", &ErasureSimParams::shots);
+
+    py::enum_<EventType>(m, "EventType")
+        .value("ERASURE", EventType::ERASURE)
+        .value("RESET", EventType::RESET)
+        .value("CHECK_ERROR", EventType::CHECK_ERROR)
+        .export_values();
+
+    py::class_<ErasureSimEvent>(m, "ErasureSimEvent")
+        .def_readonly("qubit_idx", &ErasureSimEvent::qubit_idx)
+        .def_readonly("event_type", &ErasureSimEvent::event_type);
+
+    py::class_<ErasureSimResult>(m, "ErasureSimResult")
+        .def_readonly("sparse_erasures", &ErasureSimResult::sparse_erasures)
+        .def_readonly("erasure_timestep_offsets", &ErasureSimResult::erasure_timestep_offsets);
+
+    py::class_<ErasureSimulator>(m, "ErasureSimulator")
+        .def(py::init<const ErasureSimParams&>(), py::arg("params"))
+        .def("simulate", &ErasureSimulator::simulate);
 }

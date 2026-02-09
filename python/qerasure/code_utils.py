@@ -22,6 +22,9 @@ class RotatedSurfaceCode:
         self.gates = self.cpp_code.gates
         self.partner_map = self.cpp_code.partner_map
 
+    def _to_cpp_code(self):
+        return self.cpp_code
+
     def draw(self):
         """
         Visualize the layout of the qubits in the rotated surface code.
