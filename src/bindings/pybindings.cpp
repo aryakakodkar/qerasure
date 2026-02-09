@@ -49,6 +49,7 @@ PYBIND11_MODULE(qerasure_python, m) {
             }
             return d;
         })
+        .def_property_readonly("partner_map", &RotatedSurfaceCode::partner_map)
         .def_property_readonly("x_anc_offset", &RotatedSurfaceCode::x_anc_offset)
         .def_property_readonly("z_anc_offset", &RotatedSurfaceCode::z_anc_offset);
 

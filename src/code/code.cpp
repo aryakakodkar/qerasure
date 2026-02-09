@@ -63,6 +63,8 @@ void RotatedSurfaceCode::build_stabilizers() {
     QubitIndex gates_per_step = (8 + 12 * (distance_ - 2) + 4 * (distance_ - 2) * (distance_ - 2))/4;
     gates_.resize(gates_per_step * 4); // 4 steps in the schedule
 
+    partner_map_.resize(num_qubits_, NO_PARTNER);
+
     // TODO: Is the step_iters_ vector necessary? Could I just pass gates_per_step and do the calculations from there?
     for (std::size_t step = 0; step < 4; step++) {
         step_iters_[step] = gates_.begin() + step * gates_per_step; // Find the starting point for each step in the gates vector
@@ -97,6 +99,8 @@ void RotatedSurfaceCode::build_stabilizers() {
             current_ptr = coord_to_index_.find({index_to_coord_[idx].first + x_gate_direction.first, index_to_coord_[idx].second + x_gate_direction.second});
             if (current_ptr != coord_to_index_.end()) {
                 *(step_iters_[step] + gate_idx++) = {idx, current_ptr->second}; // CNOT from x-ancilla to data qubit
+                partner_map_[step * num_qubits_ + idx] = current_ptr->second;
+                partner_map_[step * num_qubits_ + current_ptr->second] = idx;
             }
         }
 
@@ -104,6 +108,8 @@ void RotatedSurfaceCode::build_stabilizers() {
             current_ptr = coord_to_index_.find({index_to_coord_[idx].first + z_gate_direction.first, index_to_coord_[idx].second + z_gate_direction.second});
             if (current_ptr != coord_to_index_.end()) {
                 *(step_iters_[step] + gate_idx++) = {current_ptr->second, idx}; // CNOT from data qubit to z-ancilla
+                partner_map_[step * num_qubits_ + current_ptr->second] = idx;
+                partner_map_[step * num_qubits_ + idx] = current_ptr->second;
             }
         }
     }

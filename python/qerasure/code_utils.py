@@ -20,6 +20,7 @@ class RotatedSurfaceCode:
         self.z_anc_offset = self.cpp_code.z_anc_offset
         self.index_to_coord = self.cpp_code.index_to_coord
         self.gates = self.cpp_code.gates
+        self.partner_map = self.cpp_code.partner_map
 
     def draw(self):
         """
