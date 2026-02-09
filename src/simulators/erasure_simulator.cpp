@@ -1,4 +1,6 @@
 #include "qerasure/simulators/erasure_simulator.h"
+#include <chrono>
+#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 
@@ -13,8 +15,8 @@ ErasureSimResult ErasureSimulator::simulate() {
     // Check if the number of shots is valid
     if (params_.shots <= 0) {
         throw std::invalid_argument("Number of shots must be greater than 0");
-    } else if (params_.shots > 1000) {
-        throw std::invalid_argument("Number of shots requires too much memory. Use a number less than 1000.");
+    } else if (params_.shots > 10000) {
+        throw std::invalid_argument("Number of shots requires too much memory. Use a number less than 10,000.");
     }
 
     // Check if the noise parameters are valid
@@ -36,63 +38,99 @@ ErasureSimResult ErasureSimulator::simulate() {
     std::vector<std::vector<std::size_t>> erasure_timestep_offsets;
     std::size_t num_erasure_events = 0;
 
-    std::vector<std::size_t> DEFAULT_STATE(num_qubits, 0); // Default initial state for all shots
+    // Optional internal timing (set QERASURE_REPORT_TIMING=1 to enable)
+    const char* report_timing_env = std::getenv("QERASURE_REPORT_TIMING");
+    const bool report_timing = (report_timing_env != nullptr && report_timing_env[0] == '1');
+
+    using Clock = std::chrono::high_resolution_clock;
+    using Nanoseconds = std::chrono::nanoseconds;
+    std::chrono::nanoseconds t_setup{0};
+    std::chrono::nanoseconds t_erasure_check_loop{0};
+    std::chrono::nanoseconds t_evolution_loop{0};
+    std::chrono::nanoseconds t_timestep_offsets{0};
+
+    // Cache partner_map pointer outside shot loop
+    const std::size_t* partner_map_ptr = code.partner_map().data();
+    
+    // Conservative estimate: expect ~15% of max possible events per shot
+    std::size_t estimated_events_per_shot = (num_qubits * params_.qec_rounds * 15) / 100;
+    std::size_t num_timesteps = params_.qec_rounds * 4 + 1;
+
+    // Pre-allocate outer vectors to avoid repeated push_back + copy
+    sparse_erasures.resize(params_.shots);
+    erasure_timestep_offsets.resize(params_.shots);
+
+    // Reusable current_state buffer (uint8_t for cache-friendliness)
+    std::vector<uint8_t> current_state(num_qubits, 0);
 
     for (std::size_t shot = 0; shot < params_.shots; shot++) {
-        std::vector<std::vector<std::size_t>> dense_erasures(
-            num_qubits, 
-            std::vector<std::size_t>(num_qubits * params_.qec_rounds * 4 + 1, 0)
-        ); // dense erasure vector containing the erasure events for each round of QEC
-
+        auto t0 = Clock::now();
         num_erasure_events = 0; // Reset number of erasure events for the current shot
 
-        sparse_erasures.push_back(std::vector<SimEvent>());
-        erasure_timestep_offsets.push_back(std::vector<std::size_t>(params_.qec_rounds * 4 + 1, 0));
+        sparse_erasures[shot].clear();
+        sparse_erasures[shot].reserve(estimated_events_per_shot);
+        erasure_timestep_offsets[shot].assign(num_timesteps, 0);
 
-        std::vector<std::size_t> current_state = DEFAULT_STATE; // Current state of the qubits for the current shot
+        // Reset current state to all zeros
+        std::fill(current_state.begin(), current_state.end(), 0);
         
         double random_val = 0.0;
+        if (report_timing) t_setup += std::chrono::duration_cast<Nanoseconds>(Clock::now() - t0);
 
         for (std::size_t round = 0; round < params_.qec_rounds; round++) {
-            for (std::size_t step = 0; step < 4; step++) {
-                // Check for erasures at the start of each round
+            for (std::size_t step = 0; step < 4; ++step) {
+                std::size_t offset = step * num_qubits;
+
+                // Perform erasure check and reset
                 if (step == 0) {
+                    auto t1 = Clock::now();
                     for (std::size_t qubit = 0; qubit < num_qubits; qubit++) {
                         random_val = dist_(gen_);
                         if (random_val < p_erasure_check_error) {
-                            // Erasure check error occurred
-                            sparse_erasures[shot].push_back({qubit, EventType::CHECK_ERROR}); // Add check error event to sparse erasures vector
+                            sparse_erasures[shot].push_back({qubit, EventType::CHECK_ERROR});
                             num_erasure_events++;
                         } else {
-                            // Erasure check error did not occur
                             if (current_state[qubit] == 1) {
-                                sparse_erasures[shot].push_back({qubit, EventType::RESET}); // Add reset event to sparse erasures vector
+                                sparse_erasures[shot].push_back({qubit, EventType::RESET});
                                 current_state[qubit] = 0;
                                 num_erasure_events++;
                             }
                         }
+                    }
+                    if (report_timing) t_erasure_check_loop += std::chrono::duration_cast<Nanoseconds>(Clock::now() - t1);
                 }
                 
-                // Simulate evolution of erasure state for all qubits in this step
+                // Perform evolution and apply two-qubit erasure noise
+                auto t2 = Clock::now();
                 for (std::size_t qubit = 0; qubit < num_qubits; qubit++) {
-                    if (current_state[qubit] == 1 || code.partner_map()[step * num_qubits + qubit] == NO_PARTNER) {
-                        // If qubit is erased or has no partner, leave as is
-                        dense_erasures[qubit][round * 4 + step] = dense_erasures[qubit][round * 4 + step - 1];
-                    } else if (current_state[qubit] == 0) {
-                        // If qubit is not currently erased and is involved in a gate, run Markovian sampling for two-qubit erasure
+                    if (current_state[qubit] == 0 && partner_map_ptr[offset + qubit] != NO_PARTNER) {
                         random_val = dist_(gen_);
                         if (random_val < p_two) {
-                            // Erasure occurred after two-qubit gate
                             current_state[qubit] = 1;
-                            dense_erasures[qubit][round * 4 + step] = 1;
-                            sparse_erasures[shot].push_back({qubit, EventType::ERASURE}); // Add erasure event to sparse erasures vector
+                            sparse_erasures[shot].push_back({qubit, EventType::ERASURE});
                             num_erasure_events++;
                         }
                     }
                 }
+                auto t_after_evolution = Clock::now();
+                if (report_timing) t_evolution_loop += std::chrono::duration_cast<Nanoseconds>(t_after_evolution - t2);
                 erasure_timestep_offsets[shot][round * 4 + step + 1] = num_erasure_events;
+                if (report_timing) t_timestep_offsets += std::chrono::duration_cast<Nanoseconds>(Clock::now() - t_after_evolution);
             }
         }
+    }
+
+    if (report_timing) {
+        auto total_ns = t_setup.count() + t_erasure_check_loop.count() + t_evolution_loop.count() + t_timestep_offsets.count();
+        auto pct = [total_ns](std::chrono::nanoseconds t) {
+            return total_ns > 0 ? (100.0 * t.count() / total_ns) : 0.0;
+        };
+        std::cerr << "=== simulate() timing breakdown ===\n"
+                  << "  per-shot setup (allocations, push_back): " << (t_setup.count() / 1000) << " us  (" << pct(t_setup) << "%)\n"
+                  << "  erasure check loop (step==0, RNG + reset): " << (t_erasure_check_loop.count() / 1000) << " us  (" << pct(t_erasure_check_loop) << "%)\n"
+                  << "  evolution loop (partner_map + two-qubit): " << (t_evolution_loop.count() / 1000) << " us  (" << pct(t_evolution_loop) << "%)\n"
+                  << "  timestep_offsets write:                  " << (t_timestep_offsets.count() / 1000) << " us  (" << pct(t_timestep_offsets) << "%)\n"
+                  << "  total (inside simulate):                 " << (total_ns / 1000) << " us\n";
     }
 
     return {sparse_erasures, erasure_timestep_offsets};

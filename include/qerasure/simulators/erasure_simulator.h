@@ -15,7 +15,7 @@ struct ErasureSimParams {
 };
 
 // Possible event types for sparse storage of spacetime erasure events
-enum class EventType {
+enum class EventType : std::uint8_t {
     ERASURE = 0,
     RESET = 1,
     CHECK_ERROR = 2

@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(qerasure
     src/code/code.cpp
     src/noise/noise.cpp
+    src/simulators/erasure_simulator.cpp
 )
 
 # Let users include headers as: #include "qerasure/code/RotatedSurfaceCode.hpp"
@@ -30,6 +31,47 @@ add_executable(run_sim
 target_link_libraries(run_sim
     PRIVATE qerasure
 )
+
+# -------------------------
+# Benchmark executable with gperftools support
+# -------------------------
+# Check for gperftools
+find_library(PROFILER_LIB profiler)
+find_path(GPERFTOOLS_INCLUDE_DIR gperftools/profiler.h
+    PATHS /opt/homebrew/include /usr/local/include /usr/include
+)
+option(ENABLE_GPERFTOOLS "Enable gperftools profiling support" OFF)
+
+if(ENABLE_GPERFTOOLS AND PROFILER_LIB AND GPERFTOOLS_INCLUDE_DIR)
+    message(STATUS "gperftools found: ${PROFILER_LIB}")
+    message(STATUS "gperftools headers: ${GPERFTOOLS_INCLUDE_DIR}")
+    add_executable(benchmark_erasure_sim
+        tests/benchmark_erasure_sim.cpp
+    )
+    target_link_libraries(benchmark_erasure_sim
+        PRIVATE qerasure ${PROFILER_LIB}
+    )
+    target_include_directories(benchmark_erasure_sim PRIVATE ${GPERFTOOLS_INCLUDE_DIR})
+    target_compile_definitions(benchmark_erasure_sim PRIVATE ENABLE_GPERFTOOLS)
+    message(STATUS "Benchmark executable configured with gperftools support")
+elseif(ENABLE_GPERFTOOLS)
+    message(WARNING "gperftools requested but not found. Install libgoogle-perftools-dev (Ubuntu) or google-perftools (macOS)")
+    add_executable(benchmark_erasure_sim
+        tests/benchmark_erasure_sim.cpp
+    )
+    target_link_libraries(benchmark_erasure_sim
+        PRIVATE qerasure
+    )
+    message(STATUS "Benchmark executable configured without gperftools support")
+else()
+    add_executable(benchmark_erasure_sim
+        tests/benchmark_erasure_sim.cpp
+    )
+    target_link_libraries(benchmark_erasure_sim
+        PRIVATE qerasure
+    )
+    message(STATUS "Benchmark executable configured without gperftools support (use -DENABLE_GPERFTOOLS=ON to enable)")
+endif()
 
 # --- Fetch pybind11 at configure time ---
 include(FetchContent)

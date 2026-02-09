@@ -63,7 +63,7 @@ void RotatedSurfaceCode::build_stabilizers() {
     QubitIndex gates_per_step = (8 + 12 * (distance_ - 2) + 4 * (distance_ - 2) * (distance_ - 2))/4;
     gates_.resize(gates_per_step * 4); // 4 steps in the schedule
 
-    partner_map_.resize(num_qubits_, NO_PARTNER);
+    partner_map_.resize(4 * num_qubits_, NO_PARTNER); // 4 steps, each with num_qubits_ entries
 
     // TODO: Is the step_iters_ vector necessary? Could I just pass gates_per_step and do the calculations from there?
     for (std::size_t step = 0; step < 4; step++) {

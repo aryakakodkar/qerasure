@@ -2,7 +2,12 @@
 #include <map>
 #include <unordered_map>
 
-size_t NO_PARTNER = std::numeric_limits<size_t>::max(); // Value to represent no partner for a stabilizer
+#ifndef QERASURE_NO_PARTNER_DEFINED
+#define QERASURE_NO_PARTNER_DEFINED
+
+const std::size_t NO_PARTNER = std::numeric_limits<std::size_t>::max(); // Value to represent no partner for a stabilizer
+
+#endif
 
 using QubitIndex = std::size_t;
 using Stabilizer = std::vector<QubitIndex>;
@@ -30,6 +35,7 @@ class RotatedSurfaceCode {
 
         const std::unordered_map<std::pair<QubitIndex, QubitIndex>, QubitIndex, PairHash>& coord_to_index() const noexcept { return coord_to_index_; }
         const std::unordered_map<QubitIndex, std::pair<QubitIndex, QubitIndex>>& index_to_coord() const noexcept { return index_to_coord_; }
+        const std::vector<std::size_t>& partner_map() const noexcept { return partner_map_; }
 
         const std::size_t& x_anc_offset() const noexcept { return x_anc_offset_; }
         const std::size_t& z_anc_offset() const noexcept { return z_anc_offset_; }
