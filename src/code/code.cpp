@@ -1,116 +1,124 @@
 #include "qerasure/code/code.h"
-#include <vector>
-#include <iostream>
 
-// RotatedSurfaceCode constructor initializes the code with the specified distance and builds the lattice and stabilizers
-RotatedSurfaceCode::RotatedSurfaceCode(std::size_t distance) : distance_(distance) {
-    if (distance < 3 || distance % 2 == 0) {
-        throw std::invalid_argument("Distance must be an odd integer greater than or equal to 3");
-    }
-    build();
+#include <stdexcept>
+
+namespace qerasure {
+
+RotatedSurfaceCode::RotatedSurfaceCode(std::size_t distance)
+    : distance_(distance),
+      num_qubits_(0),
+      x_anc_offset_(0),
+      z_anc_offset_(0),
+      gates_per_step_(0),
+      dense_stride_(2 * distance + 2) {
+  if (distance < 3 || distance % 2 == 0) {
+    throw std::invalid_argument("Distance must be an odd integer greater than or equal to 3");
+  }
+  build();
 }
 
-// Builds the entire structure of the rotated surface code by first constructing the lattice of qubits
-// and then defining the stabilizers and corresponding gates for syndrome extraction.
 void RotatedSurfaceCode::build() {
-    build_lattice();
-    build_stabilizers();
+  build_lattice();
+  build_stabilizers();
 }
 
-// Builds the lattice structure for the rotated surface code.
-// Initializes the positions and indices of all data and ancilla qubits,
-// populates the coordinate-to-index and index-to-coordinate mappings,
-// and sets up the offsets for X and Z ancilla qubit indices based on the code distance.
+std::size_t RotatedSurfaceCode::dense_offset(QubitIndex x, QubitIndex y) const noexcept {
+  return x * dense_stride_ + y;
+}
+
+void RotatedSurfaceCode::set_coord(QubitIndex idx, QubitIndex x, QubitIndex y) {
+  index_to_coord_[idx] = {x, y};
+  coord_to_index_dense_[dense_offset(x, y)] = idx;
+}
+
+std::size_t RotatedSurfaceCode::try_get_coord(std::ptrdiff_t x, std::ptrdiff_t y) const noexcept {
+  if (x < 0 || y < 0 || static_cast<std::size_t>(x) >= dense_stride_ ||
+      static_cast<std::size_t>(y) >= dense_stride_) {
+    return kNoPartner;
+  }
+  return coord_to_index_dense_[dense_offset(static_cast<QubitIndex>(x), static_cast<QubitIndex>(y))];
+}
+
 void RotatedSurfaceCode::build_lattice() {
-    // Build data qubit lattice: data qubits are located at (x, y) where x, y are odd integers from 1 to 2*distance-1
-    QubitIndex index = 0;
-    for (QubitIndex x = 1; x < 2 * distance_ + 1; x += 2) {
-        for (QubitIndex y = 1; y < 2 * distance_ + 1; y += 2) {
-            index_to_coord_[index].first = x;
-            index_to_coord_[index].second = y;
-            coord_to_index_[{x, y}] = index++;
-        }
-    }
+  coord_to_index_dense_.assign(dense_stride_ * dense_stride_, kNoPartner);
 
-    // Build x-ancilla lattice: x-ancilla qubits are located at (x, y) where x, y are even and x + y is congruent to 2 mod 4
-    x_anc_offset_ = index;
-    for (QubitIndex x = 2; x < 2 * distance_; x += 4) {
-        for (QubitIndex y = 0; y < 2 * distance_ + 2; y += 2) {
-            index_to_coord_[index].first = x + 2 - (y % 4);
-            index_to_coord_[index].second = y;
-            coord_to_index_[{x + 2 - (y % 4), y}] = index++;
-        }
-    }
+  const std::size_t data_count = distance_ * distance_;
+  const std::size_t ancilla_count = distance_ * distance_ - 1;
+  const std::size_t total_qubits = data_count + ancilla_count;
 
-    // Build z-ancilla lattice: z-ancilla qubits are located at (x, y) where x, y are even and x + y is congruent to 0 mod 4
-    z_anc_offset_ = index;
-    for (QubitIndex x = 0; x < 2 * distance_ + 2; x += 2) {
-        for (QubitIndex y = 2; y < 2 * distance_; y += 4) {
-            index_to_coord_[index].first = x;
-            index_to_coord_[index].second = y + (x % 4);
-            coord_to_index_[{x, y + (x % 4)}] = index++;
-        }
-    }
+  index_to_coord_.resize(total_qubits);
 
-    num_qubits_ = index;
+  QubitIndex index = 0;
+  for (QubitIndex x = 1; x < 2 * distance_ + 1; x += 2) {
+    for (QubitIndex y = 1; y < 2 * distance_ + 1; y += 2) {
+      set_coord(index++, x, y);
+    }
+  }
+
+  x_anc_offset_ = index;
+  for (QubitIndex x = 2; x < 2 * distance_; x += 4) {
+    for (QubitIndex y = 0; y < 2 * distance_ + 2; y += 2) {
+      set_coord(index++, x + 2 - (y % 4), y);
+    }
+  }
+
+  z_anc_offset_ = index;
+  for (QubitIndex x = 0; x < 2 * distance_ + 2; x += 2) {
+    for (QubitIndex y = 2; y < 2 * distance_; y += 4) {
+      set_coord(index++, x, y + (x % 4));
+    }
+  }
+
+  num_qubits_ = index;
 }
 
-// Builds the stabilizers for the rotated surface code
-// Populates the list of gates which contains pairs of qubits involved in CNOT operations in the form (control, target)
-// Also populates the step pointers vector which delimits the different gate steps in the syndrome extraction schedule
 void RotatedSurfaceCode::build_stabilizers() {
-    // Number of gates: 2 gates per corner qubit, 3 per boundary qubit, 4 per bulk qubit
-    QubitIndex gates_per_step = (8 + 12 * (distance_ - 2) + 4 * (distance_ - 2) * (distance_ - 2))/4;
-    gates_.resize(gates_per_step * 4); // 4 steps in the schedule
+  gates_per_step_ = 2 + 3 * (distance_ - 2) + (distance_ - 2) * (distance_ - 2);
+  gates_.clear();
+  gates_.reserve(gates_per_step_ * 4);
 
-    partner_map_.resize(4 * num_qubits_, NO_PARTNER); // 4 steps, each with num_qubits_ entries
+  partner_map_.assign(4 * num_qubits_, kNoPartner);
 
-    // TODO: Is the step_iters_ vector necessary? Could I just pass gates_per_step and do the calculations from there?
-    for (std::size_t step = 0; step < 4; step++) {
-        step_iters_[step] = gates_.begin() + step * gates_per_step; // Find the starting point for each step in the gates vector
+  constexpr std::array<std::pair<int, int>, 4> kXDirections = {
+      std::pair<int, int>{-1, 1},
+      std::pair<int, int>{1, 1},
+      std::pair<int, int>{-1, -1},
+      std::pair<int, int>{1, -1},
+  };
+  constexpr std::array<std::pair<int, int>, 4> kZDirections = {
+      std::pair<int, int>{-1, 1},
+      std::pair<int, int>{-1, -1},
+      std::pair<int, int>{1, 1},
+      std::pair<int, int>{1, -1},
+  };
+
+  for (std::size_t step = 0; step < 4; ++step) {
+    const std::size_t step_base = step * num_qubits_;
+
+    for (QubitIndex idx = x_anc_offset_; idx < z_anc_offset_; ++idx) {
+      const auto& coord = index_to_coord_[idx];
+      const std::size_t partner = try_get_coord(
+          static_cast<std::ptrdiff_t>(coord.first) + kXDirections[step].first,
+          static_cast<std::ptrdiff_t>(coord.second) + kXDirections[step].second);
+      if (partner != kNoPartner) {
+        gates_.push_back({idx, partner});
+        partner_map_[step_base + idx] = partner;
+        partner_map_[step_base + partner] = idx;
+      }
     }
 
-    for (size_t step = 0; step < 4; step++) {
-        std::pair<QubitIndex, QubitIndex> x_gate_direction;
-        std::pair<QubitIndex, QubitIndex> z_gate_direction;
-
-        switch (step) {
-            case 0:
-                x_gate_direction = {-1, 1}; // NW
-                z_gate_direction = {-1, 1}; // NW
-                break;
-            case 1:
-                x_gate_direction = {1, 1}; // NE
-                z_gate_direction = {-1, -1}; // SW
-                break;
-            case 2:
-                x_gate_direction = {-1, -1}; // SW
-                z_gate_direction = {1, 1}; // NE
-                break;
-            case 3:
-                x_gate_direction = {1, -1}; // SE
-                z_gate_direction = {1, -1}; // SE
-                break;
-        }
-
-        QubitIndex gate_idx = 0;
-        std::unordered_map<std::pair<QubitIndex, QubitIndex>, QubitIndex, PairHash>::iterator current_ptr;
-        for (QubitIndex idx = x_anc_offset_; idx < z_anc_offset_; idx++) {
-            current_ptr = coord_to_index_.find({index_to_coord_[idx].first + x_gate_direction.first, index_to_coord_[idx].second + x_gate_direction.second});
-            if (current_ptr != coord_to_index_.end()) {
-                *(step_iters_[step] + gate_idx++) = {idx, current_ptr->second}; // CNOT from x-ancilla to data qubit
-                partner_map_[step * num_qubits_ + idx] = current_ptr->second;
-                partner_map_[step * num_qubits_ + current_ptr->second] = idx;
-            }
-        }
-
-        for (QubitIndex idx = z_anc_offset_; idx < num_qubits_; idx++) { 
-            current_ptr = coord_to_index_.find({index_to_coord_[idx].first + z_gate_direction.first, index_to_coord_[idx].second + z_gate_direction.second});
-            if (current_ptr != coord_to_index_.end()) {
-                *(step_iters_[step] + gate_idx++) = {current_ptr->second, idx}; // CNOT from data qubit to z-ancilla
-                partner_map_[step * num_qubits_ + current_ptr->second] = idx;
-                partner_map_[step * num_qubits_ + idx] = current_ptr->second;
-            }
-        }
+    for (QubitIndex idx = z_anc_offset_; idx < num_qubits_; ++idx) {
+      const auto& coord = index_to_coord_[idx];
+      const std::size_t partner = try_get_coord(
+          static_cast<std::ptrdiff_t>(coord.first) + kZDirections[step].first,
+          static_cast<std::ptrdiff_t>(coord.second) + kZDirections[step].second);
+      if (partner != kNoPartner) {
+        gates_.push_back({partner, idx});
+        partner_map_[step_base + partner] = idx;
+        partner_map_[step_base + idx] = partner;
+      }
     }
+  }
 }
+
+}  // namespace qerasure

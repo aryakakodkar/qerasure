@@ -1,37 +1,68 @@
 #include "qerasure/noise/noise.h"
-#include <initializer_list>
+
+#include <array>
 #include <stdexcept>
-#include <string>
+
+namespace qerasure {
+namespace {
+
+constexpr std::array<std::string_view, static_cast<std::size_t>(NoiseChannel::kCount)> kChannelNames = {
+    "p_single_qubit_depolarize",
+    "p_two_qubit_depolarize",
+    "p_measurement_error",
+    "p_single_qubit_erasure",
+    "p_two_qubit_erasure",
+    "p_erasure_check_error",
+};
+
+}  // namespace
 
 NoiseParams::NoiseParams() {
-    probabilities["p_single_qubit_depolarize"] = 0.0;
-    probabilities["p_two_qubit_depolarize"] = 0.0;
-    probabilities["p_measurement_error"] = 0.0;
-    probabilities["p_single_qubit_erasure"] = 0.0;
-    probabilities["p_two_qubit_erasure"] = 0.0;
-    probabilities["p_erasure_check_error"] = 0.0;
+  probabilities_.fill(0.0);
 }
 
-// Set the probability for a given noise mechanism, validating the input
-void NoiseParams::set(const std::string& err_mech, double prob) {
-    if (probabilities.find(err_mech) == probabilities.end()) {
-        throw std::invalid_argument("Invalid noise parameter err_mech: " + err_mech);
-    }
-    if (prob < 0.0 || prob > 1.0) {
-        throw std::invalid_argument("Probability probs must be between 0 and 1");
-    }
-    probabilities[err_mech] = prob;
+void NoiseParams::validate_probability(double prob) {
+  if (prob < 0.0 || prob > 1.0) {
+    throw std::invalid_argument("Probability must be between 0 and 1");
+  }
 }
 
-// Get the probability for a given noise mechanism, validating the input
-const double& NoiseParams::get(const std::string& err_mech) const {
-    auto it = probabilities.find(err_mech);
-    if (it == probabilities.end()) {
-        throw std::invalid_argument("Invalid noise parameter err_mech: " + err_mech);
-    }
-    return it->second;
+std::size_t NoiseParams::to_index(NoiseChannel channel) {
+  return static_cast<std::size_t>(channel);
 }
 
-const std::unordered_map<std::string, double>& NoiseParams::get_all() const {
-    return probabilities;
+void NoiseParams::set(NoiseChannel channel, double prob) {
+  validate_probability(prob);
+  probabilities_[to_index(channel)] = prob;
 }
+
+double NoiseParams::get(NoiseChannel channel) const {
+  return probabilities_[to_index(channel)];
+}
+
+std::string_view NoiseParams::to_string(NoiseChannel channel) {
+  const std::size_t idx = to_index(channel);
+  if (idx >= kChannelNames.size()) {
+    throw std::invalid_argument("Invalid noise channel enum value");
+  }
+  return kChannelNames[idx];
+}
+
+NoiseChannel NoiseParams::from_string(const std::string& channel) {
+  for (std::size_t i = 0; i < kChannelNames.size(); ++i) {
+    if (channel == kChannelNames[i]) {
+      return static_cast<NoiseChannel>(i);
+    }
+  }
+  throw std::invalid_argument("Invalid noise parameter channel: " + channel);
+}
+
+void NoiseParams::set(const std::string& channel, double prob) {
+  set(from_string(channel), prob);
+}
+
+double NoiseParams::get(const std::string& channel) const {
+  return get(from_string(channel));
+}
+
+}  // namespace qerasure

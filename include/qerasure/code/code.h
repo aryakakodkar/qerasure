@@ -1,64 +1,56 @@
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <utility>
 #include <vector>
-#include <map>
-#include <unordered_map>
 
-#ifndef QERASURE_NO_PARTNER_DEFINED
-#define QERASURE_NO_PARTNER_DEFINED
-
-const std::size_t NO_PARTNER = std::numeric_limits<std::size_t>::max(); // Value to represent no partner for a stabilizer
-
-#endif
+namespace qerasure {
 
 using QubitIndex = std::size_t;
-using Stabilizer = std::vector<QubitIndex>;
+using Gate = std::pair<QubitIndex, QubitIndex>;
 
-#ifndef ROTATED_SURFACE_CODE
-#define ROTATED_SURFACE_CODE
-
-// Hash function for std::pair<QubitIndex, QubitIndex> to enable use as unordered_map key
-struct PairHash {
-    std::size_t operator()(const std::pair<QubitIndex, QubitIndex>& p) const {
-        std::size_t h1 = std::hash<QubitIndex>{}(p.first);
-        std::size_t h2 = std::hash<QubitIndex>{}(p.second);
-        return h1 ^ (h2 << 1);
-    }
-};
+inline constexpr std::size_t kNoPartner = std::numeric_limits<std::size_t>::max();
 
 class RotatedSurfaceCode {
-    public:
-        explicit RotatedSurfaceCode(std::size_t distance);
+ public:
+  explicit RotatedSurfaceCode(std::size_t distance);
 
-        const std::size_t distance() const noexcept { return distance_; }
-        const std::size_t num_qubits() const noexcept { return num_qubits_; }
+  std::size_t distance() const noexcept { return distance_; }
+  std::size_t num_qubits() const noexcept { return num_qubits_; }
+  std::size_t gates_per_step() const noexcept { return gates_per_step_; }
 
-        const std::vector<std::pair<QubitIndex, QubitIndex>>& gates() const noexcept { return gates_; }
+  const std::vector<Gate>& gates() const noexcept { return gates_; }
+  const std::vector<std::pair<QubitIndex, QubitIndex>>& index_to_coord() const noexcept {
+    return index_to_coord_;
+  }
+  const std::vector<std::size_t>& partner_map() const noexcept { return partner_map_; }
 
-        const std::unordered_map<std::pair<QubitIndex, QubitIndex>, QubitIndex, PairHash>& coord_to_index() const noexcept { return coord_to_index_; }
-        const std::unordered_map<QubitIndex, std::pair<QubitIndex, QubitIndex>>& index_to_coord() const noexcept { return index_to_coord_; }
-        const std::vector<std::size_t>& partner_map() const noexcept { return partner_map_; }
+  std::size_t x_anc_offset() const noexcept { return x_anc_offset_; }
+  std::size_t z_anc_offset() const noexcept { return z_anc_offset_; }
 
-        const std::size_t& x_anc_offset() const noexcept { return x_anc_offset_; }
-        const std::size_t& z_anc_offset() const noexcept { return z_anc_offset_; }
+ private:
+  std::size_t distance_;
+  std::size_t num_qubits_;
+  std::size_t x_anc_offset_;
+  std::size_t z_anc_offset_;
+  std::size_t gates_per_step_;
+  std::size_t dense_stride_;
 
-    private:
-        std::size_t distance_; // code distance
-        std::size_t num_qubits_; // total number of qubits in the code (2 * d**2 - 1)
-        
-        std::unordered_map<std::pair<QubitIndex, QubitIndex>, QubitIndex, PairHash> coord_to_index_; // maps (x, y) coordinates to qubit indices
-        std::unordered_map<QubitIndex, std::pair<QubitIndex, QubitIndex>> index_to_coord_; // maps qubit indices to (x, y) coordinates
+  std::vector<std::pair<QubitIndex, QubitIndex>> index_to_coord_;
+  std::vector<std::size_t> coord_to_index_dense_;
+  std::vector<Gate> gates_;
+  std::vector<std::size_t> partner_map_;
 
-        std::vector<std::pair<QubitIndex, QubitIndex>> gates_; // A flat vector of CNOT gates in the syndrome extraction circuit
-        std::array<std::vector<std::pair<QubitIndex, QubitIndex>>::iterator, 4> step_iters_; // Iterators delimiting the 4 steps in the syndrome extraction schedule
+  void build();
+  void build_lattice();
+  void build_stabilizers();
 
-        std::vector<std::size_t> partner_map_; // Maps each qubit to its partner in the gate
-
-        std::size_t x_anc_offset_; // offset for x-ancilla qubit indices
-        std::size_t z_anc_offset_; // offset for z-ancilla qubit indices
-
-        void build();
-
-        void build_lattice();
-        void build_stabilizers();
+  std::size_t dense_offset(QubitIndex x, QubitIndex y) const noexcept;
+  void set_coord(QubitIndex idx, QubitIndex x, QubitIndex y);
+  std::size_t try_get_coord(std::ptrdiff_t x, std::ptrdiff_t y) const noexcept;
 };
 
-#endif // ROTATED_SURFACE_CODE
+}  // namespace qerasure

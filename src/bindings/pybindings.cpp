@@ -1,5 +1,8 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+
+#include <string>
+
 #include "qerasure/code/code.h"
 #include "qerasure/noise/noise.h"
 #include "qerasure/simulators/erasure_simulator.h"
@@ -8,103 +11,136 @@ namespace py = pybind11;
 
 namespace {
 
-py::list gates_to_python(const RotatedSurfaceCode& code) {
-    const auto& gates_flat = code.gates();
-    const std::size_t d = code.distance();
-    const std::size_t gates_per_step = 2 + 3 * (d - 2) + (d - 2) * (d - 2);
+py::list gates_to_python(const qerasure::RotatedSurfaceCode& code) {
+  const auto& gates_flat = code.gates();
+  const std::size_t gates_per_step = code.gates_per_step();
 
-    py::list result;
-    for (std::size_t s = 0; s < 4; s++) {
-        py::list step_gates;
-        for (std::size_t j = 0; j < gates_per_step; j++) {
-            const std::size_t idx = s * gates_per_step + j;
-            if (idx < gates_flat.size()) {
-                const auto& gate = gates_flat[idx];
-                step_gates.append(py::make_tuple(gate.first, gate.second));
-            }
-        }
-        result.append(step_gates);
+  py::list result;
+  for (std::size_t s = 0; s < 4; ++s) {
+    py::list step_gates;
+    for (std::size_t j = 0; j < gates_per_step; ++j) {
+      const std::size_t idx = s * gates_per_step + j;
+      if (idx < gates_flat.size()) {
+        const auto& gate = gates_flat[idx];
+        step_gates.append(py::make_tuple(gate.first, gate.second));
+      }
     }
-    return result;
+    result.append(step_gates);
+  }
+  return result;
 }
 
-py::dict coord_to_index_to_python(const RotatedSurfaceCode& code) {
-    const auto& m = code.coord_to_index();
-    py::dict out;
-    for (const auto& kv : m) {
-        py::tuple coord = py::make_tuple(kv.first.first, kv.first.second);
-        out[coord] = kv.second;
-    }
-    return out;
+py::dict coord_to_index_to_python(const qerasure::RotatedSurfaceCode& code) {
+  const auto& coords = code.index_to_coord();
+  py::dict out;
+  for (std::size_t idx = 0; idx < coords.size(); ++idx) {
+    py::tuple coord = py::make_tuple(coords[idx].first, coords[idx].second);
+    out[coord] = idx;
+  }
+  return out;
 }
 
-py::dict index_to_coord_to_python(const RotatedSurfaceCode& code) {
-    const auto& m = code.index_to_coord();
-    py::dict out;
-    for (const auto& kv : m) {
-        py::tuple coord = py::make_tuple(kv.second.first, kv.second.second);
-        out[py::int_(kv.first)] = coord;
+py::dict index_to_coord_to_python(const qerasure::RotatedSurfaceCode& code) {
+  const auto& coords = code.index_to_coord();
+  py::dict out;
+  for (std::size_t idx = 0; idx < coords.size(); ++idx) {
+    py::tuple coord = py::make_tuple(coords[idx].first, coords[idx].second);
+    out[py::int_(idx)] = coord;
+  }
+  return out;
+}
+
+std::string noise_repr(const qerasure::NoiseParams& params) {
+  std::string repr = "NoiseParams(";
+
+  const auto channels = {
+      qerasure::NoiseChannel::kSingleQubitDepolarize,
+      qerasure::NoiseChannel::kTwoQubitDepolarize,
+      qerasure::NoiseChannel::kMeasurementError,
+      qerasure::NoiseChannel::kSingleQubitErasure,
+      qerasure::NoiseChannel::kTwoQubitErasure,
+      qerasure::NoiseChannel::kErasureCheckError,
+  };
+
+  bool first = true;
+  for (const auto channel : channels) {
+    if (!first) {
+      repr += ", ";
     }
-    return out;
+    first = false;
+    repr += std::string(qerasure::NoiseParams::to_string(channel));
+    repr += "=";
+    repr += std::to_string(params.get(channel));
+  }
+
+  repr += ")";
+  return repr;
 }
 
 }  // namespace
 
 PYBIND11_MODULE(qerasure_python, m) {
-    m.doc() = "Python bindings for the qerasure code library";
+  m.doc() = "Python bindings for the qerasure code library";
 
-    py::class_<RotatedSurfaceCode>(m, "RotatedSurfaceCode")
-        .def(py::init<std::size_t>(), py::arg("distance"))
-        .def_property_readonly("distance", &RotatedSurfaceCode::distance)
-        .def_property_readonly("num_qubits", &RotatedSurfaceCode::num_qubits)
-        .def_property_readonly("gates", &gates_to_python)
-        .def_property_readonly("coord_to_index", &coord_to_index_to_python)
-        .def_property_readonly("index_to_coord", &index_to_coord_to_python)
-        .def_property_readonly("partner_map", &RotatedSurfaceCode::partner_map)
-        .def_property_readonly("x_anc_offset", &RotatedSurfaceCode::x_anc_offset)
-        .def_property_readonly("z_anc_offset", &RotatedSurfaceCode::z_anc_offset);
+  py::class_<qerasure::RotatedSurfaceCode>(m, "RotatedSurfaceCode")
+      .def(py::init<std::size_t>(), py::arg("distance"))
+      .def_property_readonly("distance", &qerasure::RotatedSurfaceCode::distance)
+      .def_property_readonly("num_qubits", &qerasure::RotatedSurfaceCode::num_qubits)
+      .def_property_readonly("gates", &gates_to_python)
+      .def_property_readonly("coord_to_index", &coord_to_index_to_python)
+      .def_property_readonly("index_to_coord", &index_to_coord_to_python)
+      .def_property_readonly("partner_map", &qerasure::RotatedSurfaceCode::partner_map)
+      .def_property_readonly("x_anc_offset", &qerasure::RotatedSurfaceCode::x_anc_offset)
+      .def_property_readonly("z_anc_offset", &qerasure::RotatedSurfaceCode::z_anc_offset)
+      .def_property_readonly("gates_per_step", &qerasure::RotatedSurfaceCode::gates_per_step);
 
-    py::class_<NoiseParams>(m, "NoiseParams")
-        .def(py::init<>())
-        .def("set", &NoiseParams::set, py::arg("key"), py::arg("value"))
-        .def("get", &NoiseParams::get, py::arg("key"))
-        .def("__repr__", [](const NoiseParams& params) {
-            std::string repr = "NoiseParams(";
-            std::unordered_map<std::string, double> probs = params.get_all();
-            for (const auto& kv : probs) {
-                repr += kv.first + "=" + std::to_string(kv.second) + ", ";
-            }
-            if (!probs.empty()) {
-                repr.pop_back(); // Remove last space
-                repr.pop_back(); // Remove last comma
-            }
-            repr += ")";
-            return repr;
-        });
+  py::enum_<qerasure::NoiseChannel>(m, "NoiseChannel")
+      .value("SINGLE_QUBIT_DEPOLARIZE", qerasure::NoiseChannel::kSingleQubitDepolarize)
+      .value("TWO_QUBIT_DEPOLARIZE", qerasure::NoiseChannel::kTwoQubitDepolarize)
+      .value("MEASUREMENT_ERROR", qerasure::NoiseChannel::kMeasurementError)
+      .value("SINGLE_QUBIT_ERASURE", qerasure::NoiseChannel::kSingleQubitErasure)
+      .value("TWO_QUBIT_ERASURE", qerasure::NoiseChannel::kTwoQubitErasure)
+      .value("ERASURE_CHECK_ERROR", qerasure::NoiseChannel::kErasureCheckError)
+      .export_values();
 
-    py::class_<ErasureSimParams>(m, "ErasureSimParams")
-        .def(py::init<const RotatedSurfaceCode&, const NoiseParams&, std::size_t, std::size_t>(),
-             py::arg("code"), py::arg("noise"), py::arg("qec_rounds"), py::arg("shots"))
-        .def_readonly("code", &ErasureSimParams::code)
-        .def_readonly("noise", &ErasureSimParams::noise)
-        .def_readonly("qec_rounds", &ErasureSimParams::qec_rounds)
-        .def_readonly("shots", &ErasureSimParams::shots);
+  py::class_<qerasure::NoiseParams>(m, "NoiseParams")
+      .def(py::init<>())
+      .def("set", py::overload_cast<const std::string&, double>(&qerasure::NoiseParams::set),
+           py::arg("key"), py::arg("value"))
+      .def("set", py::overload_cast<qerasure::NoiseChannel, double>(&qerasure::NoiseParams::set),
+           py::arg("channel"), py::arg("value"))
+      .def("get", py::overload_cast<const std::string&>(&qerasure::NoiseParams::get, py::const_),
+           py::arg("key"))
+      .def("get", py::overload_cast<qerasure::NoiseChannel>(&qerasure::NoiseParams::get, py::const_),
+           py::arg("channel"))
+      .def("__repr__", &noise_repr);
 
-    py::enum_<EventType>(m, "EventType")
-        .value("ERASURE", EventType::ERASURE)
-        .value("RESET", EventType::RESET)
-        .value("CHECK_ERROR", EventType::CHECK_ERROR)
-        .export_values();
+  py::class_<qerasure::ErasureSimParams>(m, "ErasureSimParams")
+      .def(py::init<const qerasure::RotatedSurfaceCode&, const qerasure::NoiseParams&, std::size_t,
+                    std::size_t, std::optional<std::uint32_t>>(),
+           py::arg("code"), py::arg("noise"), py::arg("qec_rounds"), py::arg("shots"),
+           py::arg("seed") = py::none())
+      .def_readonly("code", &qerasure::ErasureSimParams::code)
+      .def_readonly("noise", &qerasure::ErasureSimParams::noise)
+      .def_readonly("qec_rounds", &qerasure::ErasureSimParams::qec_rounds)
+      .def_readonly("shots", &qerasure::ErasureSimParams::shots)
+      .def_readonly("seed", &qerasure::ErasureSimParams::seed);
 
-    py::class_<ErasureSimEvent>(m, "ErasureSimEvent")
-        .def_readonly("qubit_idx", &ErasureSimEvent::qubit_idx)
-        .def_readonly("event_type", &ErasureSimEvent::event_type);
+  py::enum_<qerasure::EventType>(m, "EventType")
+      .value("ERASURE", qerasure::EventType::ERASURE)
+      .value("RESET", qerasure::EventType::RESET)
+      .value("CHECK_ERROR", qerasure::EventType::CHECK_ERROR)
+      .export_values();
 
-    py::class_<ErasureSimResult>(m, "ErasureSimResult")
-        .def_readonly("sparse_erasures", &ErasureSimResult::sparse_erasures)
-        .def_readonly("erasure_timestep_offsets", &ErasureSimResult::erasure_timestep_offsets);
+  py::class_<qerasure::ErasureSimEvent>(m, "ErasureSimEvent")
+      .def_readonly("qubit_idx", &qerasure::ErasureSimEvent::qubit_idx)
+      .def_readonly("event_type", &qerasure::ErasureSimEvent::event_type);
 
-    py::class_<ErasureSimulator>(m, "ErasureSimulator")
-        .def(py::init<const ErasureSimParams&>(), py::arg("params"))
-        .def("simulate", &ErasureSimulator::simulate);
+  py::class_<qerasure::ErasureSimResult>(m, "ErasureSimResult")
+      .def_readonly("sparse_erasures", &qerasure::ErasureSimResult::sparse_erasures)
+      .def_readonly("erasure_timestep_offsets", &qerasure::ErasureSimResult::erasure_timestep_offsets);
+
+  py::class_<qerasure::ErasureSimulator>(m, "ErasureSimulator")
+      .def(py::init<qerasure::ErasureSimParams>(), py::arg("params"))
+      .def("simulate", &qerasure::ErasureSimulator::simulate);
 }

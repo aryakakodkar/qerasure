@@ -1,28 +1,45 @@
-#include<unordered_map>
-#include<string>
+#pragma once
 
-/**
- * Factory function to construct and validate NoiseParams.
- * Throws std::invalid_argument if any probability is invalid.
- */
-#ifndef NOISE_PARAMS
-#define NOISE_PARAMS
+#include <array>
+#include <cstddef>
+#include <string>
+#include <string_view>
 
-// Struct to hold noise parameters for the error model. All probabilities must be between 0 and 1.
-struct NoiseParams {
-    private:
-        std::unordered_map<std::string, double> probabilities; // Map of noise mechanism names to their probabilities
+namespace qerasure {
 
-    public:
-        explicit NoiseParams();
-
-        void set(const std::string& err_mech, double prob);
-
-        const double& get(const std::string& err_mech) const;
-        const std::unordered_map<std::string, double>& get_all() const;
-
-        auto begin() const { return probabilities.begin(); }
-        auto end() const { return probabilities.end(); }
+enum class NoiseChannel : std::size_t {
+  kSingleQubitDepolarize = 0,
+  kTwoQubitDepolarize,
+  kMeasurementError,
+  kSingleQubitErasure,
+  kTwoQubitErasure,
+  kErasureCheckError,
+  kCount,
 };
 
-#endif // NOISE_PARAMS
+class NoiseParams {
+ public:
+  NoiseParams();
+
+  void set(NoiseChannel channel, double prob);
+  double get(NoiseChannel channel) const;
+
+  // Compatibility helpers for Python/legacy code paths.
+  void set(const std::string& channel, double prob);
+  double get(const std::string& channel) const;
+
+  std::array<double, static_cast<std::size_t>(NoiseChannel::kCount)> values() const {
+    return probabilities_;
+  }
+
+  static std::string_view to_string(NoiseChannel channel);
+  static NoiseChannel from_string(const std::string& channel);
+
+ private:
+  std::array<double, static_cast<std::size_t>(NoiseChannel::kCount)> probabilities_{};
+
+  static std::size_t to_index(NoiseChannel channel);
+  static void validate_probability(double prob);
+};
+
+}  // namespace qerasure
