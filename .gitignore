@@ -2,3 +2,4 @@ build/*
 __pycache__/*
 AGENTS.md
 codex_reports/*
+build-release/*
