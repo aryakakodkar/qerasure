@@ -3,9 +3,9 @@
 
 #include <string>
 
-#include "qerasure/code/code.h"
-#include "qerasure/noise/noise.h"
-#include "qerasure/simulators/erasure_simulator.h"
+#include "qerasure/core/code/rotated_surface_code.h"
+#include "qerasure/core/noise/noise_params.h"
+#include "qerasure/core/sim/erasure_simulator.h"
 
 namespace py = pybind11;
 

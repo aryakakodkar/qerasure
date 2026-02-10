@@ -1,4 +1,4 @@
-#include "qerasure/code/code.h"
+#include "qerasure/core/code/rotated_surface_code.h"
 
 #include <stdexcept>
 

@@ -24,9 +24,9 @@ if(ENABLE_GPERFTOOLS)
 endif()
 
 add_library(qerasure
-    src/code/code.cpp
-    src/noise/noise.cpp
-    src/simulators/erasure_simulator.cpp
+    src/core/code/rotated_surface_code.cpp
+    src/core/noise/noise_params.cpp
+    src/core/sim/erasure_simulator.cpp
 )
 
 target_include_directories(qerasure
@@ -40,7 +40,7 @@ add_executable(run_sim
 target_link_libraries(run_sim PRIVATE qerasure)
 
 add_executable(bench_erasure_sim
-    bench/bench_erasure_sim.cpp
+    benchmarks/bench_erasure_sim.cpp
 )
 target_link_libraries(bench_erasure_sim PRIVATE qerasure ${QERASURE_EXTRA_LIBS})
 if(QERASURE_EXTRA_INCLUDE_DIRS)
@@ -69,7 +69,7 @@ else()
 endif()
 
 pybind11_add_module(qerasure_python
-    src/bindings/pybindings.cpp
+    src/interop/python/pybindings.cpp
 )
 
 target_link_libraries(qerasure_python PRIVATE qerasure)

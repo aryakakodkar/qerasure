@@ -1,4 +1,4 @@
-#include "qerasure/noise/noise.h"
+#include "qerasure/core/noise/noise_params.h"
 
 #include <array>
 #include <stdexcept>
