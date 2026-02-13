@@ -1,131 +1,151 @@
-from qerasure_python import ErasureSimParams as _CPP_ErasureSimParams
-from qerasure_python import EventType as _CPP_EventType
-from qerasure_python import ErasureSimEvent as _CPP_ErasureSimEvent
-from qerasure_python import ErasureSimResult as _CPP_ErasureSimResult
-from qerasure_python import ErasureSimulator as _CPP_ErasureSimulator
+"""Python wrappers and visualization helpers for erasure simulation."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional, Sequence
+
+from ._bindings import cpp
 from .code_utils import RotatedSurfaceCode
 from .noise_utils import NoiseParams
 
-import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap, BoundaryNorm
-import numpy as np
+EventType = cpp.EventType
 
+
+@dataclass
 class ErasureSimParams:
-    """
-    A Python wrapper around the C++ ErasureSimParams struct.
+    """Python facade around C++ ErasureSimParams."""
 
-    This class provides a Python interface to the C++ implementation of the parameters for an erasure simulator.
-    It allows users to easily create and manipulate simulation parameters in Python before passing them to the simulator.
-    """
-    def __init__(self, code: RotatedSurfaceCode, noise: NoiseParams, qec_rounds: int, shots: int):
-        self.code = code
-        self.noise = noise
-        self.qec_rounds = qec_rounds
-        self.shots = shots
+    code: RotatedSurfaceCode
+    noise: NoiseParams
+    qec_rounds: int
+    shots: int
+    seed: Optional[int] = None
 
     def _to_cpp_params(self):
-        cpp_params = _CPP_ErasureSimParams(self.code._to_cpp_code(), self.noise._to_cpp_noise_params(), self.qec_rounds, self.shots)
-        return cpp_params
+        return cpp.ErasureSimParams(
+            self.code._to_cpp_code(),
+            self.noise._to_cpp_noise_params(),
+            int(self.qec_rounds),
+            int(self.shots),
+            self.seed,
+        )
 
+
+@dataclass
 class ErasureSimResult:
-    """
-    A Python wrapper around the C++ ErasureSimResult struct.
+    sparse_erasures: list
+    erasure_timestep_offsets: list
 
-    This class provides a Python interface to the C++ implementation of the results from an erasure simulation.
-    It allows users to easily access and manipulate the simulation results in Python after running the simulator.
-    """
-    def __init__(self, cpp_result: _CPP_ErasureSimResult):
-        self.sparse_erasures = cpp_result.sparse_erasures
-        self.erasure_timestep_offsets = cpp_result.erasure_timestep_offsets
+    @classmethod
+    def from_cpp(cls, cpp_result) -> "ErasureSimResult":
+        return cls(
+            sparse_erasures=cpp_result.sparse_erasures,
+            erasure_timestep_offsets=cpp_result.erasure_timestep_offsets,
+        )
 
-class ErasureSimEvent:
-    """
-    A Python wrapper around the C++ ErasureSimEvent struct.
-
-    This class provides a Python interface to the C++ implementation of an erasure simulation event.
-    It allows users to easily access and manipulate the details of an erasure event in Python after running the simulator.
-    """
-    def __init__(self, cpp_event: _CPP_ErasureSimEvent):
-        self.qubit_idx = cpp_event.qubit_idx
-        self.event_type = cpp_event.event_type
 
 class ErasureSimulator:
-    """
-    A Python wrapper around the C++ ErasureSimulator class.
+    """High-level Python simulator wrapper using C++ backend."""
 
-    This class provides a Python interface to the C++ implementation of an erasure simulator for quantum error correction.
-    It initializes the simulator with given parameters and exposes methods to run simulations and retrieve results.
-    """
     def __init__(self, params: ErasureSimParams):
-        self.params = params._to_cpp_params()
-        self.simulator = _CPP_ErasureSimulator(params._to_cpp_params())
+        self.params = params
+        self._cpp_simulator = cpp.ErasureSimulator(params._to_cpp_params())
 
-    def simulate(self):
-        return ErasureSimResult(self.simulator.simulate())
+    def simulate(self) -> ErasureSimResult:
+        return ErasureSimResult.from_cpp(self._cpp_simulator.simulate())
 
-def visualize_erasures(sim_result: ErasureSimResult, params: ErasureSimParams, shot_idx: int = 0, qubits: list[int] = None):
-    """
-    A helper function to visualize the erasure events from a simulation result.
 
-    This function takes an ErasureSimResult object and creates a visual representation of the erasure events over time.
-    It can be used to better understand the distribution and frequency of erasures during the simulation.
-
-    Args:
-        sim_result (ErasureSimResult): The result object containing the erasure events to visualize.
-        params (ErasureSimParams): The parameters used for the simulation, needed to determine the number of qubits and rounds.
-        shot_idx (int): The index of the shot to visualize (default is 0).
-        qubits (list[int], optional): A list of qubit indices to visualize. If None, all qubits will be visualized. 
-            Must be between 0 and the total number of qubits in the code, and no more than 50 qubits can be visualized at once.
-
-    Raises:
-        ValueError: If the specified shot index is out of range, or if the qubit indices are invalid or too many qubits are requested for visualization.
-
-    Returns:
-        None: This function displays a plot of the erasure events and does not return any value
-    """
+def _normalize_qubit_subset(total_qubits: int, qubits: Optional[Sequence[int]]) -> list[int]:
     if qubits is None:
-        if params.code.num_qubits > 50:
-            raise ValueError("Code has more than 50 qubits, please specify a subset of qubits to visualize.")
-        qubits = list(range(params.code.num_qubits))
-    elif qubits < 0 or max(qubits) >= params.code.num_qubits:
-        raise ValueError("Qubit indices must be between 0 and {}".format(params.code.num_qubits - 1))
-    elif len(qubits) > 50:
-        raise ValueError("Cannot visualize more than 50 qubits at once, please specify a smaller subset of qubits.")
+        if total_qubits > 128:
+            raise ValueError(
+                "Code has more than 128 qubits; pass an explicit qubit subset for visualization."
+            )
+        return list(range(total_qubits))
 
-    # Create a figure and axis for plotting
-    fig, ax = plt.subplots(figsize=(10, 6))
+    if len(qubits) == 0:
+        raise ValueError("Qubit subset cannot be empty")
 
-    # Extract the erasure events for the specified shot
-    erasure_events = sim_result.sparse_erasures[shot_idx]
+    unique_qubits = sorted(set(int(q) for q in qubits))
+    if unique_qubits[0] < 0 or unique_qubits[-1] >= total_qubits:
+        raise ValueError(f"Qubit indices must be in [0, {total_qubits - 1}]")
+    if len(unique_qubits) > 200:
+        raise ValueError("Visualizing >200 qubits is not recommended for test inspection")
+    return unique_qubits
 
-    # Create a 2D array to represent the erasure events for each qubit and shot
-    erasure_matrix = np.zeros((params.qec_rounds * 4 + 1, len(qubits)), dtype=int)
 
-    for t, offset in enumerate(sim_result.erasure_timestep_offsets[shot_idx][:-1]):
-        for event in erasure_events[offset:sim_result.erasure_timestep_offsets[shot_idx][t+1]]:
-            if event.qubit_idx in qubits:
-                if event.event_type == _CPP_EventType.ERASURE:
-                    erasure_matrix[t, event.qubit_idx] = 1
-                elif event.event_type == _CPP_EventType.RESET:
-                    erasure_matrix[t, event.qubit_idx] = 2
-                elif event.event_type == _CPP_EventType.CHECK_ERROR:
-                    erasure_matrix[t, event.qubit_idx] = 3
+def visualize_erasures(
+    sim_result: ErasureSimResult,
+    params: ErasureSimParams,
+    shot_idx: int = 0,
+    qubits: Optional[Sequence[int]] = None,
+    show_round_guides: bool = True,
+):
+    """Render erasure timeline heatmap plus per-timestep event counts for one shot."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from matplotlib.colors import BoundaryNorm, ListedColormap
 
-    cmap = ListedColormap(['#f0f0f0', '#1f77b4', '#ff7f0e', '#2ca02c'])  # light gray, blue, orange, green
-    bounds = [0, 1, 2, 3, 4]
-    norm = BoundaryNorm(bounds, cmap.N)
-    # Transpose so timesteps are on x-axis, qubits on y-axis
-    cax = ax.imshow(erasure_matrix.T, aspect='auto', cmap=cmap, norm=norm, interpolation='nearest')
-    cbar = fig.colorbar(cax, ax=ax, ticks=[0.5, 1.5, 2.5, 3.5])
-    cbar.ax.set_yticklabels(['No Event', 'Erasure', 'Reset', 'Check Error'])
-    cbar.set_label('Event Type')
+    if shot_idx < 0 or shot_idx >= len(sim_result.sparse_erasures):
+        raise ValueError(f"shot_idx must be in [0, {len(sim_result.sparse_erasures) - 1}]")
 
-    # Add vertical lines at every timestep 4n + 1 to indicate the start of each QEC round
-    for t in range(0, params.qec_rounds * 4 + 1, 4):
-        ax.axvline(x=t, color='black', linestyle='--', linewidth=0.5)
+    selected_qubits = _normalize_qubit_subset(params.code.num_qubits, qubits)
+    qubit_to_col = {q: i for i, q in enumerate(selected_qubits)}
 
-    ax.set_xlabel('Timestep')
-    ax.set_ylabel('Qubit Index')
-    ax.set_title('Erasure Events for Shot {}'.format(shot_idx))
-    plt.show()
+    num_timesteps = params.qec_rounds * 4 + 1
+    matrix = np.zeros((num_timesteps, len(selected_qubits)), dtype=np.uint8)
+
+    events = sim_result.sparse_erasures[shot_idx]
+    offsets = sim_result.erasure_timestep_offsets[shot_idx]
+
+    per_timestep_counts = np.zeros(num_timesteps, dtype=np.int32)
+
+    for t in range(num_timesteps):
+        start = offsets[t]
+        end = offsets[t + 1]
+        per_timestep_counts[t] = end - start
+
+        for event in events[start:end]:
+            q = int(event.qubit_idx)
+            if q not in qubit_to_col:
+                continue
+            col = qubit_to_col[q]
+            if event.event_type == EventType.ERASURE:
+                matrix[t, col] = 1
+            elif event.event_type == EventType.RESET:
+                matrix[t, col] = 2
+            elif event.event_type == EventType.CHECK_ERROR:
+                matrix[t, col] = 3
+
+    fig, (ax0, ax1) = plt.subplots(
+        2,
+        1,
+        figsize=(12, 8),
+        gridspec_kw={"height_ratios": [4, 1]},
+        sharex=True,
+    )
+
+    cmap = ListedColormap(["#f8fafc", "#2563eb", "#f97316", "#dc2626"])
+    norm = BoundaryNorm([0, 1, 2, 3, 4], cmap.N)
+
+    im = ax0.imshow(matrix.T, aspect="auto", cmap=cmap, norm=norm, interpolation="nearest")
+
+    if show_round_guides:
+        for t in range(0, num_timesteps, 4):
+            ax0.axvline(t - 0.5, color="#111827", linestyle="--", linewidth=0.6, alpha=0.7)
+            ax1.axvline(t - 0.5, color="#111827", linestyle="--", linewidth=0.6, alpha=0.7)
+
+    cbar = fig.colorbar(im, ax=ax0, ticks=[0.5, 1.5, 2.5, 3.5], pad=0.01)
+    cbar.ax.set_yticklabels(["No event", "Erasure", "Reset", "Check error"])
+
+    ax0.set_title(f"Erasure Timeline (shot={shot_idx}, qubits={len(selected_qubits)})")
+    ax0.set_ylabel("Qubit index (subset order)")
+
+    ax1.plot(np.arange(num_timesteps), per_timestep_counts, color="#0f172a", linewidth=1.5)
+    ax1.fill_between(np.arange(num_timesteps), per_timestep_counts, color="#cbd5e1", alpha=0.6)
+    ax1.set_ylabel("Events")
+    ax1.set_xlabel("Timestep")
+
+    fig.tight_layout()
+    return fig, (ax0, ax1)

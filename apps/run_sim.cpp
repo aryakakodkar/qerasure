@@ -1,30 +1,26 @@
-#include "qerasure/code/code.h"
-#include "qerasure/noise/noise.h"
-#include "qerasure/simulators/erasure_simulator.h"
+#include "qerasure/core/code/rotated_surface_code.h"
+#include "qerasure/core/noise/noise_params.h"
+#include "qerasure/core/sim/erasure_simulator.h"
+
 #include <iostream>
 
 int main() {
-    RotatedSurfaceCode code(3); // Create a distance-3 rotated surface code
-    NoiseParams noise;
+  qerasure::RotatedSurfaceCode code(3);
+  qerasure::NoiseParams noise;
 
-    noise.set("p_two_qubit_erasure", 0.01);
-    noise.set("p_erasure_check_error", 0.05);
+  noise.set(qerasure::NoiseChannel::kTwoQubitErasure, 0.01);
+  noise.set(qerasure::NoiseChannel::kErasureCheckError, 0.05);
 
-    ErasureSimParams params = {code, noise, 10, 1000};
+  qerasure::ErasureSimParams params(code, noise, 10, 1000, 12345);
+  qerasure::ErasureSimulator simulator(params);
+  qerasure::ErasureSimResult result = simulator.simulate();
 
-    ErasureSimulator simulator(params);
-    ErasureSimResult result = simulator.simulate();
+  std::size_t total_events = 0;
+  for (const auto& shot : result.sparse_erasures) {
+    total_events += shot.size();
+  }
 
-    // Find the total memory usage of the result
-    std::size_t mem_usage = 0;
-    for (const auto& shot : result.sparse_erasures) {
-        mem_usage += shot.size() * sizeof(ErasureSimEvent);
-    }
-    mem_usage += result.erasure_timestep_offsets.size() * sizeof(std::vector<std::size_t>);
-    for (const auto& timestep_offsets : result.erasure_timestep_offsets) {
-        mem_usage += timestep_offsets.size() * sizeof(std::size_t);
-    }
-    std::cout << "Total memory usage: " << mem_usage << " bytes\n" << std::endl;
-
-    return 0;
+  std::cout << "Simulated shots: " << params.shots << "\n";
+  std::cout << "Total sparse events: " << total_events << "\n";
+  return 0;
 }
