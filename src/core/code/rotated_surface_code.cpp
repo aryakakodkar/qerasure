@@ -22,6 +22,7 @@ void RotatedSurfaceCode::build() {
   build_stabilizers();
 }
 
+// Flatten (x, y) into a single index so coordinate lookup is a simple array access.
 std::size_t RotatedSurfaceCode::dense_offset(QubitIndex x, QubitIndex y) const noexcept {
   return x * dense_stride_ + y;
 }
@@ -48,6 +49,7 @@ void RotatedSurfaceCode::build_lattice() {
 
   index_to_coord_.resize(total_qubits);
 
+  // Data qubits live on odd lattice coordinates.
   QubitIndex index = 0;
   for (QubitIndex x = 1; x < 2 * distance_ + 1; x += 2) {
     for (QubitIndex y = 1; y < 2 * distance_ + 1; y += 2) {
@@ -55,6 +57,7 @@ void RotatedSurfaceCode::build_lattice() {
     }
   }
 
+  // X-ancilla qubits occupy the checkerboard sublattice used for X stabilizers.
   x_anc_offset_ = index;
   for (QubitIndex x = 2; x < 2 * distance_; x += 4) {
     for (QubitIndex y = 0; y < 2 * distance_ + 2; y += 2) {
@@ -62,6 +65,7 @@ void RotatedSurfaceCode::build_lattice() {
     }
   }
 
+  // Z-ancilla qubits occupy the complementary checkerboard sublattice.
   z_anc_offset_ = index;
   for (QubitIndex x = 0; x < 2 * distance_ + 2; x += 2) {
     for (QubitIndex y = 2; y < 2 * distance_; y += 4) {
@@ -73,12 +77,15 @@ void RotatedSurfaceCode::build_lattice() {
 }
 
 void RotatedSurfaceCode::build_stabilizers() {
+  // Per-step gate count: corners contribute 2, edges 3, interior sites 4.
   gates_per_step_ = 2 + 3 * (distance_ - 2) + (distance_ - 2) * (distance_ - 2);
   gates_.clear();
   gates_.reserve(gates_per_step_ * 4);
 
+  // Four schedule steps x all qubits -> partner lookup table.
   partner_map_.assign(4 * num_qubits_, kNoPartner);
 
+  // Direction vectors for X- and Z-ancilla interactions at each of the 4 steps.
   constexpr std::array<std::pair<int, int>, 4> kXDirections = {
       std::pair<int, int>{-1, 1},
       std::pair<int, int>{1, 1},
@@ -95,6 +102,7 @@ void RotatedSurfaceCode::build_stabilizers() {
   for (std::size_t step = 0; step < 4; ++step) {
     const std::size_t step_base = step * num_qubits_;
 
+    // X checks: ancilla -> data CNOT orientation.
     for (QubitIndex idx = x_anc_offset_; idx < z_anc_offset_; ++idx) {
       const auto& coord = index_to_coord_[idx];
       const std::size_t partner = try_get_coord(
@@ -107,6 +115,7 @@ void RotatedSurfaceCode::build_stabilizers() {
       }
     }
 
+    // Z checks: data -> ancilla CNOT orientation.
     for (QubitIndex idx = z_anc_offset_; idx < num_qubits_; ++idx) {
       const auto& coord = index_to_coord_[idx];
       const std::size_t partner = try_get_coord(
