@@ -14,6 +14,7 @@ ErasureSimulator::ErasureSimulator(ErasureSimParams params)
       rng_state_(params_.seed.has_value() ? static_cast<std::uint64_t>(*params_.seed)
                                           : 0xD1B54A32D192ED03ULL) {
   validate_params();
+  precompute_erasable_mask();
   // Done once so inner simulation loops can iterate only participating qubits.
   precompute_active_qubits();
 }
@@ -34,6 +35,15 @@ void ErasureSimulator::validate_params() const {
   if (expected_events_per_shot * params_.shots > 10000000ULL) {
     throw std::invalid_argument(
         "Number of shots is likely to occupy a large proportion of memory");
+  }
+
+  if (params_.erasure_selection == ErasureQubitSelection::EXPLICIT ||
+      !params_.erasable_qubits.empty()) {
+    for (const std::size_t qubit : params_.erasable_qubits) {
+      if (qubit >= params_.code.num_qubits()) {
+        throw std::invalid_argument("Explicit erasable qubit index is out of range");
+      }
+    }
   }
 }
 
@@ -71,10 +81,48 @@ void ErasureSimulator::precompute_active_qubits() {
 
     for (std::size_t qubit = 0; qubit < num_qubits; ++qubit) {
       // partner_map is flattened by [step][qubit].
-      if (partner_map[base + qubit] != kNoPartner) {
+      if (partner_map[base + qubit] != kNoPartner && erasable_mask_[qubit] != 0) {
         active.push_back(qubit);
       }
     }
+  }
+}
+
+void ErasureSimulator::precompute_erasable_mask() {
+  const std::size_t num_qubits = params_.code.num_qubits();
+  erasable_mask_.assign(num_qubits, 0);
+  const bool use_explicit_subset =
+      params_.erasure_selection == ErasureQubitSelection::EXPLICIT ||
+      !params_.erasable_qubits.empty();
+
+  if (use_explicit_subset) {
+    for (const std::size_t q : params_.erasable_qubits) {
+      erasable_mask_[q] = 1;
+    }
+    return;
+  }
+
+  switch (params_.erasure_selection) {
+    case ErasureQubitSelection::ALL_QUBITS:
+      std::fill(erasable_mask_.begin(), erasable_mask_.end(), 1);
+      return;
+    case ErasureQubitSelection::DATA_QUBITS:
+      for (std::size_t q = 0; q < params_.code.x_anc_offset(); ++q) {
+        erasable_mask_[q] = 1;
+      }
+      return;
+    case ErasureQubitSelection::X_ANCILLAS:
+      for (std::size_t q = params_.code.x_anc_offset(); q < params_.code.z_anc_offset(); ++q) {
+        erasable_mask_[q] = 1;
+      }
+      return;
+    case ErasureQubitSelection::Z_ANCILLAS:
+      for (std::size_t q = params_.code.z_anc_offset(); q < num_qubits; ++q) {
+        erasable_mask_[q] = 1;
+      }
+      return;
+    case ErasureQubitSelection::EXPLICIT:
+      return;
   }
 }
 

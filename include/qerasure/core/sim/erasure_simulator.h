@@ -11,6 +11,14 @@
 
 namespace qerasure {
 
+enum class ErasureQubitSelection : std::uint8_t {
+  ALL_QUBITS = 0,
+  DATA_QUBITS = 1,
+  X_ANCILLAS = 2,
+  Z_ANCILLAS = 3,
+  EXPLICIT = 4,
+};
+
 // Immutable configuration object for one simulator run.
 struct ErasureSimParams {
   // Geometry + schedule metadata (number of qubits, gate partners per step, etc.).
@@ -28,13 +36,23 @@ struct ErasureSimParams {
   // Optional deterministic seed for reproducible Monte Carlo output.
   std::optional<std::uint32_t> seed;
 
+  // Predefined erasable-qubit subsets.
+  ErasureQubitSelection erasure_selection;
+
+  // Explicit erasable-qubit subset (used when selection=EXPLICIT).
+  std::vector<std::size_t> erasable_qubits;
+
   ErasureSimParams(RotatedSurfaceCode code_, NoiseParams noise_, std::size_t qec_rounds_,
-                   std::size_t shots_, std::optional<std::uint32_t> seed_ = std::nullopt)
+                   std::size_t shots_, std::optional<std::uint32_t> seed_ = std::nullopt,
+                   ErasureQubitSelection erasure_selection_ = ErasureQubitSelection::ALL_QUBITS,
+                   std::vector<std::size_t> erasable_qubits_ = {})
       : code(std::move(code_)),
         noise(std::move(noise_)),
         qec_rounds(qec_rounds_),
         shots(shots_),
-        seed(seed_) {}
+        seed(seed_),
+        erasure_selection(erasure_selection_),
+        erasable_qubits(std::move(erasable_qubits_)) {}
 };
 
 enum class EventType : std::uint8_t {
@@ -81,9 +99,11 @@ class ErasureSimulator {
 
   // Active qubits per schedule step to avoid scanning qubits with no gate partner.
   std::array<std::vector<std::size_t>, 4> active_qubits_per_step_;
+  std::vector<std::uint8_t> erasable_mask_;
 
   void validate_params() const;
   void precompute_active_qubits();
+  void precompute_erasable_mask();
 
   // Apply stochastic two-qubit erasure events for one syndrome step.
   // `current_state[q]` acts as a one-bit latch for "currently erased".

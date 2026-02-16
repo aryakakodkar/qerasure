@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "qerasure/core/code/rotated_surface_code.h"
@@ -36,11 +38,11 @@ struct LoweringParams {
     std::pair<LoweredErrorParams, LoweredErrorParams> x_ancilla_params_;
     std::pair<LoweredErrorParams, LoweredErrorParams> z_ancilla_params_;
 
-    LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& ancillas) {} // all ancillas share same lowering protocol
+    LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& ancillas); // all ancillas share same lowering protocol
     LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& x_ancillas,
-                    const LoweredErrorParams& z_ancillas) {} // separate lowering protocols for X and Z ancillas
+                    const LoweredErrorParams& z_ancillas); // separate lowering protocols for X and Z ancillas
     LoweringParams(const LoweredErrorParams& reset, const std::pair<LoweredErrorParams, LoweredErrorParams>& x_ancillas, 
-                    const std::pair<LoweredErrorParams, LoweredErrorParams>& z_ancillas) {} // separate lowering protocol for each ancilla
+                    const std::pair<LoweredErrorParams, LoweredErrorParams>& z_ancillas); // separate lowering protocol for each ancilla
 };
 
 class Lowerer {
@@ -49,8 +51,14 @@ class Lowerer {
 
         RotatedSurfaceCode code_;
         LoweringParams params_;
+        std::uint64_t rng_state_;
 
         LoweringResult lower(const ErasureSimResult& sim_result);
+
+    private:
+        std::uint64_t next_random_u64();
+        static std::uint64_t probability_to_threshold(double p);
+        bool sample_with_probability(double p);
 };
 
 } // namespace qerasure

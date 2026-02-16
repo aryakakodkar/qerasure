@@ -10,6 +10,7 @@ from .code_utils import RotatedSurfaceCode
 from .noise_utils import NoiseParams
 
 EventType = cpp.EventType
+ErasureQubitSelection = cpp.ErasureQubitSelection
 
 
 @dataclass
@@ -21,14 +22,21 @@ class ErasureSimParams:
     qec_rounds: int
     shots: int
     seed: Optional[int] = None
+    erasure_selection: object = ErasureQubitSelection.ALL_QUBITS
+    erasable_qubits: Optional[Sequence[int]] = None
 
     def _to_cpp_params(self):
+        selection = self.erasure_selection
+        if self.erasable_qubits is not None:
+            selection = ErasureQubitSelection.EXPLICIT
         return cpp.ErasureSimParams(
             self.code._to_cpp_code(),
             self.noise._to_cpp_noise_params(),
             int(self.qec_rounds),
             int(self.shots),
             self.seed,
+            selection,
+            [] if self.erasable_qubits is None else [int(q) for q in self.erasable_qubits],
         )
 
 
@@ -36,12 +44,14 @@ class ErasureSimParams:
 class ErasureSimResult:
     sparse_erasures: list
     erasure_timestep_offsets: list
+    _cpp_result: object | None = None
 
     @classmethod
     def from_cpp(cls, cpp_result) -> "ErasureSimResult":
         return cls(
             sparse_erasures=cpp_result.sparse_erasures,
             erasure_timestep_offsets=cpp_result.erasure_timestep_offsets,
+            _cpp_result=cpp_result,
         )
 
 

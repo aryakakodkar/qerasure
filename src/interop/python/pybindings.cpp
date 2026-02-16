@@ -4,6 +4,7 @@
 #include <string>
 
 #include "qerasure/core/code/rotated_surface_code.h"
+#include "qerasure/core/lowering/lowering.h"
 #include "qerasure/core/noise/noise_params.h"
 #include "qerasure/core/sim/erasure_simulator.h"
 
@@ -115,16 +116,29 @@ PYBIND11_MODULE(qerasure_python, m) {
            py::arg("channel"))
       .def("__repr__", &noise_repr);
 
+  py::enum_<qerasure::ErasureQubitSelection>(m, "ErasureQubitSelection")
+      .value("ALL_QUBITS", qerasure::ErasureQubitSelection::ALL_QUBITS)
+      .value("DATA_QUBITS", qerasure::ErasureQubitSelection::DATA_QUBITS)
+      .value("X_ANCILLAS", qerasure::ErasureQubitSelection::X_ANCILLAS)
+      .value("Z_ANCILLAS", qerasure::ErasureQubitSelection::Z_ANCILLAS)
+      .value("EXPLICIT", qerasure::ErasureQubitSelection::EXPLICIT)
+      .export_values();
+
   py::class_<qerasure::ErasureSimParams>(m, "ErasureSimParams")
       .def(py::init<const qerasure::RotatedSurfaceCode&, const qerasure::NoiseParams&, std::size_t,
-                    std::size_t, std::optional<std::uint32_t>>(),
+                    std::size_t, std::optional<std::uint32_t>, qerasure::ErasureQubitSelection,
+                    std::vector<std::size_t>>(),
            py::arg("code"), py::arg("noise"), py::arg("qec_rounds"), py::arg("shots"),
-           py::arg("seed") = py::none())
+           py::arg("seed") = py::none(),
+           py::arg("erasure_selection") = qerasure::ErasureQubitSelection::ALL_QUBITS,
+           py::arg("erasable_qubits") = std::vector<std::size_t>{})
       .def_readonly("code", &qerasure::ErasureSimParams::code)
       .def_readonly("noise", &qerasure::ErasureSimParams::noise)
       .def_readonly("qec_rounds", &qerasure::ErasureSimParams::qec_rounds)
       .def_readonly("shots", &qerasure::ErasureSimParams::shots)
-      .def_readonly("seed", &qerasure::ErasureSimParams::seed);
+      .def_readonly("seed", &qerasure::ErasureSimParams::seed)
+      .def_readonly("erasure_selection", &qerasure::ErasureSimParams::erasure_selection)
+      .def_readonly("erasable_qubits", &qerasure::ErasureSimParams::erasable_qubits);
 
   py::enum_<qerasure::EventType>(m, "EventType")
       .value("ERASURE", qerasure::EventType::ERASURE)
@@ -143,4 +157,44 @@ PYBIND11_MODULE(qerasure_python, m) {
   py::class_<qerasure::ErasureSimulator>(m, "ErasureSimulator")
       .def(py::init<qerasure::ErasureSimParams>(), py::arg("params"))
       .def("simulate", &qerasure::ErasureSimulator::simulate);
+
+  py::enum_<qerasure::PauliError>(m, "PauliError")
+      .value("NO_ERROR", qerasure::PauliError::NO_ERROR)
+      .value("X_ERROR", qerasure::PauliError::X_ERROR)
+      .value("Z_ERROR", qerasure::PauliError::Z_ERROR)
+      .value("Y_ERROR", qerasure::PauliError::Y_ERROR)
+      .value("DEPOLARIZE", qerasure::PauliError::DEPOLARIZE)
+      .export_values();
+
+  py::class_<qerasure::LoweredErrorParams>(m, "LoweredErrorParams")
+      .def(py::init<>())
+      .def_readwrite("error_type", &qerasure::LoweredErrorParams::error_type)
+      .def_readwrite("probability", &qerasure::LoweredErrorParams::probability);
+
+  py::class_<qerasure::LoweredErrorEvent>(m, "LoweredErrorEvent")
+      .def_readonly("qubit_idx", &qerasure::LoweredErrorEvent::qubit_idx)
+      .def_readonly("error_type", &qerasure::LoweredErrorEvent::error_type);
+
+  py::class_<qerasure::LoweringParams>(m, "LoweringParams")
+      .def(py::init<const qerasure::LoweredErrorParams&, const qerasure::LoweredErrorParams&>(),
+           py::arg("reset"), py::arg("ancillas"))
+      .def(py::init<const qerasure::LoweredErrorParams&, const qerasure::LoweredErrorParams&,
+                    const qerasure::LoweredErrorParams&>(),
+           py::arg("reset"), py::arg("x_ancillas"), py::arg("z_ancillas"))
+      .def(py::init<const qerasure::LoweredErrorParams&,
+                    const std::pair<qerasure::LoweredErrorParams, qerasure::LoweredErrorParams>&,
+                    const std::pair<qerasure::LoweredErrorParams, qerasure::LoweredErrorParams>&>(),
+           py::arg("reset"), py::arg("x_ancillas"), py::arg("z_ancillas"))
+      .def_readwrite("reset_params_", &qerasure::LoweringParams::reset_params_)
+      .def_readwrite("x_ancilla_params_", &qerasure::LoweringParams::x_ancilla_params_)
+      .def_readwrite("z_ancilla_params_", &qerasure::LoweringParams::z_ancilla_params_);
+
+  py::class_<qerasure::LoweringResult>(m, "LoweringResult")
+      .def_readonly("sparse_cliffords", &qerasure::LoweringResult::sparse_cliffords)
+      .def_readonly("clifford_timestep_offsets", &qerasure::LoweringResult::clifford_timestep_offsets);
+
+  py::class_<qerasure::Lowerer>(m, "Lowerer")
+      .def(py::init<const qerasure::RotatedSurfaceCode&, const qerasure::LoweringParams&>(),
+           py::arg("code"), py::arg("params"))
+      .def("lower", &qerasure::Lowerer::lower);
 }
