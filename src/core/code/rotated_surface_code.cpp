@@ -20,6 +20,7 @@ RotatedSurfaceCode::RotatedSurfaceCode(std::size_t distance)
 void RotatedSurfaceCode::build() {
   build_lattice();
   build_stabilizers();
+  build_data_partner_slots();
 }
 
 // Flatten (x, y) into a single index so coordinate lookup is a simple array access.
@@ -125,6 +126,35 @@ void RotatedSurfaceCode::build_stabilizers() {
         gates_.push_back({partner, idx});
         partner_map_[step_base + partner] = idx;
         partner_map_[step_base + idx] = partner;
+      }
+    }
+  }
+}
+
+void RotatedSurfaceCode::build_data_partner_slots() {
+  data_to_x_ancilla_slots_.assign(x_anc_offset_, {kNoPartner, kNoPartner});
+  data_to_z_ancilla_slots_.assign(x_anc_offset_, {kNoPartner, kNoPartner});
+
+  for (std::size_t data_idx = 0; data_idx < x_anc_offset_; ++data_idx) {
+    for (std::size_t step = 0; step < 4; ++step) {
+      const std::size_t partner = partner_map_[step * num_qubits_ + data_idx];
+      if (partner == kNoPartner) {
+        continue;
+      }
+      if (partner >= x_anc_offset_ && partner < z_anc_offset_) {
+        auto& slots = data_to_x_ancilla_slots_[data_idx];
+        if (slots.first == kNoPartner) {
+          slots.first = partner;
+        } else if (slots.second == kNoPartner && slots.first != partner) {
+          slots.second = partner;
+        }
+      } else if (partner >= z_anc_offset_) {
+        auto& slots = data_to_z_ancilla_slots_[data_idx];
+        if (slots.first == kNoPartner) {
+          slots.first = partner;
+        } else if (slots.second == kNoPartner && slots.first != partner) {
+          slots.second = partner;
+        }
       }
     }
   }

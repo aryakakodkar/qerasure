@@ -44,6 +44,15 @@ class RotatedSurfaceCode {
   std::size_t x_anc_offset() const noexcept { return x_anc_offset_; }
   std::size_t z_anc_offset() const noexcept { return z_anc_offset_; }
 
+  // Precomputed ancilla partner slots for each data qubit.
+  // The two slots are deterministic per data qubit and used by lowering.
+  const std::vector<std::pair<std::size_t, std::size_t>>& data_to_x_ancilla_slots() const noexcept {
+    return data_to_x_ancilla_slots_;
+  }
+  const std::vector<std::pair<std::size_t, std::size_t>>& data_to_z_ancilla_slots() const noexcept {
+    return data_to_z_ancilla_slots_;
+  }
+
  private:
   // Input distance d (odd, >=3).
   std::size_t distance_;
@@ -72,6 +81,8 @@ class RotatedSurfaceCode {
 
   // Flattened [step * num_qubits + qubit] partner lookup.
   std::vector<std::size_t> partner_map_;
+  std::vector<std::pair<std::size_t, std::size_t>> data_to_x_ancilla_slots_;
+  std::vector<std::pair<std::size_t, std::size_t>> data_to_z_ancilla_slots_;
 
   // High-level build sequence.
   void build();
@@ -81,6 +92,7 @@ class RotatedSurfaceCode {
 
   // Populate 4-step CNOT schedule and partner map.
   void build_stabilizers();
+  void build_data_partner_slots();
 
   // Helper converting 2D coordinates to dense table offsets.
   std::size_t dense_offset(QubitIndex x, QubitIndex y) const noexcept;

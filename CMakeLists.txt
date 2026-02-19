@@ -63,6 +63,12 @@ if(BUILD_TESTING)
   )
   target_link_libraries(smoke_sim_test PRIVATE qerasure)
   add_test(NAME smoke_sim_test COMMAND smoke_sim_test)
+
+  add_executable(lowering_standard_test
+      tests/lowering_standard_test.cpp
+  )
+  target_link_libraries(lowering_standard_test PRIVATE qerasure)
+  add_test(NAME lowering_standard_test COMMAND lowering_standard_test)
 endif()
 
 include(FetchContent)

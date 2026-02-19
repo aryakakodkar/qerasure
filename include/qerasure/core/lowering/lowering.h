@@ -10,55 +10,119 @@
 
 namespace qerasure {
 
-enum class PauliError : uint8_t {
-    NO_ERROR = 0,
-    X_ERROR = 1,
-    Z_ERROR = 2,
-    Y_ERROR = 3,
-    DEPOLARIZE = 4
+enum class PauliError : std::uint8_t {
+  NO_ERROR = 0,
+  X_ERROR = 1,
+  Z_ERROR = 2,
+  Y_ERROR = 3,
+  DEPOLARIZE = 4
 };
 
 struct LoweredErrorParams {
-    PauliError error_type;
-    double probability = 0.0;
+  PauliError error_type = PauliError::NO_ERROR;
+  double probability = 0.0;
 };
 
 struct LoweredErrorEvent {
-    std::size_t qubit_idx;
-    PauliError error_type;
+  std::size_t qubit_idx;
+  PauliError error_type;
 };
 
 struct LoweringResult {
-    std::vector<std::vector<LoweredErrorEvent>> sparse_cliffords;
-    std::vector<std::vector<std::size_t>> clifford_timestep_offsets;
+  std::vector<std::vector<LoweredErrorEvent>> sparse_cliffords;
+  std::vector<std::vector<std::size_t>> clifford_timestep_offsets;
+};
+
+// Data-qubit partner ancilla slots used by Stim-like lowering instructions.
+enum class PartnerSlot : std::uint8_t {
+  X_1 = 0,
+  X_2 = 1,
+  Z_1 = 2,
+  Z_2 = 3,
+};
+
+enum class SpreadInstructionType : std::uint8_t {
+  ERROR_CHANNEL = 0,
+  CORRELATED_ERROR = 1,
+  ELSE_CORRELATED_ERROR = 2,
+};
+
+struct SpreadTargetOp {
+  PauliError error_type = PauliError::NO_ERROR;
+  PartnerSlot slot = PartnerSlot::X_1;
+};
+
+struct SpreadInstruction {
+  SpreadInstructionType type = SpreadInstructionType::ERROR_CHANNEL;
+  double probability = 0.0;
+  std::vector<SpreadTargetOp> targets;
+};
+
+struct SpreadProgram {
+  std::vector<SpreadInstruction> instructions;
+
+  void add_error_channel(double probability, std::vector<SpreadTargetOp> targets);
+  void add_correlated_error(double probability, std::vector<SpreadTargetOp> targets);
+  void add_else_correlated_error(double probability, std::vector<SpreadTargetOp> targets);
 };
 
 struct LoweringParams {
-    LoweredErrorParams reset_params_;
-    std::pair<LoweredErrorParams, LoweredErrorParams> x_ancilla_params_;
-    std::pair<LoweredErrorParams, LoweredErrorParams> z_ancilla_params_;
+  // Legacy fields are retained for compatibility with existing bindings/callers.
+  LoweredErrorParams reset_params_;
+  std::pair<LoweredErrorParams, LoweredErrorParams> x_ancilla_params_;
+  std::pair<LoweredErrorParams, LoweredErrorParams> z_ancilla_params_;
 
-    LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& ancillas); // all ancillas share same lowering protocol
-    LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& x_ancillas,
-                    const LoweredErrorParams& z_ancillas); // separate lowering protocols for X and Z ancillas
-    LoweringParams(const LoweredErrorParams& reset, const std::pair<LoweredErrorParams, LoweredErrorParams>& x_ancillas, 
-                    const std::pair<LoweredErrorParams, LoweredErrorParams>& z_ancillas); // separate lowering protocol for each ancilla
+  // New Stim-like lowering standard:
+  // - default_data_program applies to all data qubits unless overridden.
+  // - per_data_program_overrides[data_idx] applies to specific data qubits.
+  SpreadProgram default_data_program;
+  std::vector<SpreadProgram> per_data_program_overrides;
+
+  LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& ancillas);
+  LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& x_ancillas,
+                const LoweredErrorParams& z_ancillas);
+  LoweringParams(const LoweredErrorParams& reset,
+                const std::pair<LoweredErrorParams, LoweredErrorParams>& x_ancillas,
+                const std::pair<LoweredErrorParams, LoweredErrorParams>& z_ancillas);
+
+  void set_default_data_program(const SpreadProgram& program);
+  void set_data_qubit_program(std::size_t data_qubit_idx, const SpreadProgram& program);
 };
 
 class Lowerer {
-    public:
-        explicit Lowerer(const RotatedSurfaceCode& code, const LoweringParams& params);
+ public:
+  explicit Lowerer(const RotatedSurfaceCode& code, const LoweringParams& params);
+  LoweringResult lower(const ErasureSimResult& sim_result);
 
-        RotatedSurfaceCode code_;
-        LoweringParams params_;
-        std::uint64_t rng_state_;
+  RotatedSurfaceCode code_;
+  LoweringParams params_;
+  std::uint64_t rng_state_;
 
-        LoweringResult lower(const ErasureSimResult& sim_result);
+ private:
+  struct CompiledTargetOp {
+    PauliError error_type = PauliError::NO_ERROR;
+    std::size_t qubit_idx = kNoPartner;
+  };
 
-    private:
-        std::uint64_t next_random_u64();
-        static std::uint64_t probability_to_threshold(double p);
-        bool sample_with_threshold(std::uint64_t threshold);
+  struct CompiledInstruction {
+    SpreadInstructionType type = SpreadInstructionType::ERROR_CHANNEL;
+    std::uint64_t threshold = 0;
+    std::vector<CompiledTargetOp> targets;
+  };
+
+  struct CompiledProgram {
+    std::vector<CompiledInstruction> instructions;
+  };
+
+  std::vector<CompiledProgram> compiled_program_by_data_qubit_;
+
+  void compile_programs();
+  static std::uint8_t slot_to_index(PartnerSlot slot);
+  std::size_t resolve_data_slot_qubit(std::size_t data_qubit_idx, std::uint8_t slot_index) const;
+
+  std::uint64_t next_random_u64();
+  static std::uint64_t probability_to_threshold(double p);
+  bool sample_with_threshold(std::uint64_t threshold);
 };
 
-} // namespace qerasure
+}  // namespace qerasure
