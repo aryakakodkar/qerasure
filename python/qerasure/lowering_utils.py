@@ -20,6 +20,15 @@ class LoweredErrorParams:
     probability: float
 
     def __init__(self, error_type: object = PauliError.NO_ERROR, probability: float = 0.0):
+        # Accept legacy-swapped positional usage: LoweredErrorParams(probability, error_type).
+        if isinstance(error_type, (float, int)) and probability in (
+            PauliError.NO_ERROR,
+            PauliError.X_ERROR,
+            PauliError.Z_ERROR,
+            PauliError.Y_ERROR,
+            PauliError.DEPOLARIZE,
+        ):
+            error_type, probability = probability, error_type
         self.error_type = error_type
         self.probability = float(probability)
 
@@ -77,11 +86,22 @@ class LoweringParams:
 
     def __init__(
         self,
-        reset_params: LoweredErrorParams | None = None,
-        x_ancillas: object | None = None,
+        reset_params: LoweredErrorParams | SpreadProgram | None = None,
+        x_ancillas: object | LoweredErrorParams | None = None,
         z_ancillas: object | None = None,
         default_program: SpreadProgram | None = None,
     ):
+        # Accept intuitive positional form: LoweringParams(program, reset_params).
+        if isinstance(reset_params, SpreadProgram):
+            default_program = reset_params
+            reset_params = (
+                x_ancillas
+                if isinstance(x_ancillas, LoweredErrorParams)
+                else LoweredErrorParams(PauliError.NO_ERROR, 0.0)
+            )
+            x_ancillas = None
+            z_ancillas = None
+
         self.reset_params = (
             reset_params if reset_params is not None else LoweredErrorParams(PauliError.NO_ERROR, 0.0)
         )

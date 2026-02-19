@@ -67,6 +67,16 @@ LoweringParams params(prog, reset);
 // or params.set_data_qubit_program(data_idx, prog);
 ```
 
+## Python Equivalent
+
+```python
+prog = SpreadProgram()
+prog.add_error_channel(0.5, [SpreadTargetOp(PauliError.X_ERROR, PartnerSlot.X_1)])
+reset = LoweredErrorParams(PauliError.Z_ERROR, 1.0)
+params = LoweringParams(default_program=prog, reset_params=reset)
+# Also supported: params = LoweringParams(prog, reset)
+```
+
 ## Runtime Notes
 
 - Lowering spread programs apply to **erased data qubits**.
