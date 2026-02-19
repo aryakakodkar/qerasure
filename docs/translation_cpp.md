@@ -7,6 +7,10 @@ Current implementation:
 - `include/qerasure/core/translation/stim_translation.h`
 - `src/core/translation/stim_translation.cpp`
 
+Backend:
+- Built with Stim's C++ `stim::Circuit` API (`safe_append_u` / `safe_append_ua`), not manual text concatenation.
+- `CMakeLists.txt` fetches Stim automatically via `FetchContent` and links `libstim`.
+
 ## Surface-Code Stim Generator
 
 API:

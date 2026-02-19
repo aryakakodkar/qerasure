@@ -7,6 +7,26 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ENABLE_GPERFTOOLS "Enable gperftools profiling support" OFF)
 
+include(FetchContent)
+
+# Pull Stim automatically and link against its C++ library for translation support.
+FetchContent_Declare(
+  stim
+  GIT_REPOSITORY https://github.com/quantumlib/Stim.git
+  GIT_TAG v1.15.0
+)
+FetchContent_GetProperties(stim)
+if(NOT stim_POPULATED)
+  FetchContent_Populate(stim)
+endif()
+
+file(STRINGS "${stim_SOURCE_DIR}/file_lists/source_files_no_main" STIM_SOURCE_FILES_REL)
+list(TRANSFORM STIM_SOURCE_FILES_REL PREPEND "${stim_SOURCE_DIR}/")
+
+add_library(qerasure_stim STATIC ${STIM_SOURCE_FILES_REL})
+target_include_directories(qerasure_stim PUBLIC "${stim_SOURCE_DIR}/src")
+target_compile_features(qerasure_stim PUBLIC cxx_std_20)
+
 set(QERASURE_EXTRA_LIBS "")
 set(QERASURE_EXTRA_INCLUDE_DIRS "")
 if(ENABLE_GPERFTOOLS)
@@ -30,6 +50,8 @@ add_library(qerasure
     src/core/lowering/lowering.cpp
     src/core/translation/stim_translation.cpp
 )
+target_link_libraries(qerasure PRIVATE qerasure_stim)
+target_compile_features(qerasure PUBLIC cxx_std_20)
 
 target_include_directories(qerasure
     PUBLIC
@@ -85,7 +107,6 @@ if(BUILD_TESTING)
   add_test(NAME stim_translation_test COMMAND stim_translation_test)
 endif()
 
-include(FetchContent)
 if(EXISTS "${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src/CMakeLists.txt")
   add_subdirectory("${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src" pybind11-local)
 else()

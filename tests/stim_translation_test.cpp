@@ -58,8 +58,10 @@ int main() {
   if (count_prefix(lines, "H ") != 2 * extraction_rounds) {
     throw std::runtime_error("Unexpected number of H layers in translated circuit");
   }
-  if (count_prefix(lines, "CX ") != 4 * extraction_rounds) {
-    throw std::runtime_error("Unexpected number of CX layers in translated circuit");
+  // Stim canonically fuses adjacent CX instructions when possible.
+  // Without explicit TICKs, one extraction round collapses into one CX instruction.
+  if (count_prefix(lines, "CX ") != extraction_rounds) {
+    throw std::runtime_error("Unexpected number of CX instructions in translated circuit");
   }
   if (count_prefix(lines, "MR ") != extraction_rounds) {
     throw std::runtime_error("Unexpected number of ancilla measurement rounds");

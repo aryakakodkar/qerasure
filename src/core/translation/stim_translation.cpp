@@ -2,42 +2,52 @@
 
 #include <algorithm>
 #include <limits>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include "stim/circuit/circuit.h"
+#include "stim/circuit/gate_target.h"
 
 namespace qerasure {
 
 namespace {
 
-void append_index_line(std::ostringstream* out, const char* op, const std::vector<std::size_t>& indices) {
+std::vector<uint32_t> as_u32_targets(const std::vector<std::size_t>& indices) {
+  std::vector<uint32_t> out;
+  out.reserve(indices.size());
+  for (const std::size_t q : indices) {
+    out.push_back(static_cast<uint32_t>(q));
+  }
+  return out;
+}
+
+void append_index_op(stim::Circuit* circuit, const char* op, const std::vector<std::size_t>& indices) {
   if (indices.empty()) {
     return;
   }
-  (*out) << op;
-  for (const std::size_t q : indices) {
-    (*out) << " " << q;
-  }
-  (*out) << "\n";
+  circuit->safe_append_u(op, as_u32_targets(indices));
 }
 
-void append_cx_step_line(std::ostringstream* out, const std::vector<Gate>& gates, std::size_t step_start,
-                         std::size_t step_count) {
-  (*out) << "CX";
+void append_cx_step_op(stim::Circuit* circuit, const std::vector<Gate>& gates, std::size_t step_start,
+                       std::size_t step_count) {
+  std::vector<uint32_t> targets;
+  targets.reserve(step_count * 2);
   for (std::size_t i = 0; i < step_count; ++i) {
     const Gate& gate = gates[step_start + i];
-    (*out) << " " << gate.first << " " << gate.second;
+    targets.push_back(static_cast<uint32_t>(gate.first));
+    targets.push_back(static_cast<uint32_t>(gate.second));
   }
-  (*out) << "\n";
+  circuit->safe_append_u("CX", targets);
 }
 
-void append_detector_line(std::ostringstream* out, const std::vector<int>& rec_offsets) {
-  (*out) << "DETECTOR";
-  for (const int offset : rec_offsets) {
-    (*out) << " rec[" << offset << "]";
+void append_detector_op(stim::Circuit* circuit, const std::vector<uint32_t>& rec_lookbacks) {
+  std::vector<uint32_t> rec_targets;
+  rec_targets.reserve(rec_lookbacks.size());
+  for (const uint32_t lookback : rec_lookbacks) {
+    rec_targets.push_back(lookback | stim::TARGET_RECORD_BIT);
   }
-  (*out) << "\n";
+  circuit->safe_append_u("DETECTOR", rec_targets);
 }
 
 }  // namespace
@@ -108,64 +118,65 @@ std::string build_surface_code_stim_circuit(const RotatedSurfaceCode& code, std:
     }
   }
 
-  std::ostringstream out;
+  stim::Circuit circuit;
 
   for (std::size_t round = 0; round < extraction_rounds; ++round) {
-    append_index_line(&out, "H", x_ancillas);
+    append_index_op(&circuit, "H", x_ancillas);
     for (std::size_t step = 0; step < 4; ++step) {
-      append_cx_step_line(&out, gates, step * gates_per_step, gates_per_step);
+      append_cx_step_op(&circuit, gates, step * gates_per_step, gates_per_step);
     }
-    append_index_line(&out, "H", x_ancillas);
-    append_index_line(&out, "MR", ancillas);
+    append_index_op(&circuit, "H", x_ancillas);
+    append_index_op(&circuit, "MR", ancillas);
 
     if (round == 0) {
       // Initial boundary checks: include only Z-ancilla checks (matches standard memory setup).
       for (std::size_t zi = 0; zi < num_z_anc; ++zi) {
         const std::size_t ancilla_position = num_x_anc + zi;
-        const int current_offset = -static_cast<int>(num_anc - ancilla_position);
-        append_detector_line(&out, {current_offset});
+        const uint32_t current_lookback = static_cast<uint32_t>(num_anc - ancilla_position);
+        append_detector_op(&circuit, {current_lookback});
       }
     } else {
       for (std::size_t ai = 0; ai < num_anc; ++ai) {
-        const int current_offset = -static_cast<int>(num_anc - ai);
-        const int previous_offset = -static_cast<int>(2 * num_anc - ai);
-        append_detector_line(&out, {current_offset, previous_offset});
+        const uint32_t current_lookback = static_cast<uint32_t>(num_anc - ai);
+        const uint32_t previous_lookback = static_cast<uint32_t>(2 * num_anc - ai);
+        append_detector_op(&circuit, {current_lookback, previous_lookback});
       }
     }
   }
 
-  append_index_line(&out, "M", data_qubits);
+  append_index_op(&circuit, "M", data_qubits);
 
   for (std::size_t zi = 0; zi < num_z_anc; ++zi) {
-    std::vector<int> rec_offsets;
-    rec_offsets.reserve(1 + z_ancilla_supports[zi].size());
+    std::vector<uint32_t> rec_lookbacks;
+    rec_lookbacks.reserve(1 + z_ancilla_supports[zi].size());
 
     const std::size_t ancilla_position = num_x_anc + zi;
-    const int ancilla_offset_after_data =
-        -static_cast<int>(num_data + (num_anc - ancilla_position));
-    rec_offsets.push_back(ancilla_offset_after_data);
+    const uint32_t ancilla_lookback_after_data =
+        static_cast<uint32_t>(num_data + (num_anc - ancilla_position));
+    rec_lookbacks.push_back(ancilla_lookback_after_data);
 
     for (const std::size_t data_q : z_ancilla_supports[zi]) {
-      const int data_offset = -static_cast<int>(num_data - data_q);
-      rec_offsets.push_back(data_offset);
+      const uint32_t data_lookback = static_cast<uint32_t>(num_data - data_q);
+      rec_lookbacks.push_back(data_lookback);
     }
 
-    append_detector_line(&out, rec_offsets);
+    append_detector_op(&circuit, rec_lookbacks);
   }
 
-  std::vector<int> logical_rec_offsets;
-  logical_rec_offsets.reserve(logical_z_data_qubits.size());
+  std::vector<uint32_t> logical_rec_lookbacks;
+  logical_rec_lookbacks.reserve(logical_z_data_qubits.size());
   for (const std::size_t data_q : logical_z_data_qubits) {
-    logical_rec_offsets.push_back(-static_cast<int>(num_data - data_q));
+    logical_rec_lookbacks.push_back(static_cast<uint32_t>(num_data - data_q));
   }
 
-  out << "OBSERVABLE_INCLUDE(0)";
-  for (const int offset : logical_rec_offsets) {
-    out << " rec[" << offset << "]";
+  std::vector<uint32_t> logical_targets;
+  logical_targets.reserve(logical_rec_lookbacks.size());
+  for (const uint32_t lookback : logical_rec_lookbacks) {
+    logical_targets.push_back(lookback | stim::TARGET_RECORD_BIT);
   }
-  out << "\n";
+  circuit.safe_append_ua("OBSERVABLE_INCLUDE", logical_targets, 0.0);
 
-  return out.str();
+  return circuit.str();
 }
 
 }  // namespace qerasure
