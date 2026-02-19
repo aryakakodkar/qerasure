@@ -7,6 +7,7 @@
 #include "qerasure/core/lowering/lowering.h"
 #include "qerasure/core/noise/noise_params.h"
 #include "qerasure/core/sim/erasure_simulator.h"
+#include "qerasure/core/translation/stim_translation.h"
 
 namespace py = pybind11;
 
@@ -231,4 +232,8 @@ PYBIND11_MODULE(qerasure_python, m) {
       .def(py::init<const qerasure::RotatedSurfaceCode&, const qerasure::LoweringParams&>(),
            py::arg("code"), py::arg("params"))
       .def("lower", &qerasure::Lowerer::lower);
+
+  m.def("build_surface_code_stim_circuit", &qerasure::build_surface_code_stim_circuit,
+        py::arg("code"), py::arg("qec_rounds"),
+        "Generate a Stim-format rotated-surface-code circuit string.");
 }
