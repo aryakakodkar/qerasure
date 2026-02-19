@@ -27,6 +27,7 @@ add_library(qerasure
     src/core/code/rotated_surface_code.cpp
     src/core/noise/noise_params.cpp
     src/core/sim/erasure_simulator.cpp
+    src/core/lowering/lowering.cpp
 )
 
 target_include_directories(qerasure
@@ -45,6 +46,14 @@ add_executable(bench_erasure_sim
 target_link_libraries(bench_erasure_sim PRIVATE qerasure ${QERASURE_EXTRA_LIBS})
 if(QERASURE_EXTRA_INCLUDE_DIRS)
   target_include_directories(bench_erasure_sim PRIVATE ${QERASURE_EXTRA_INCLUDE_DIRS})
+endif()
+
+add_executable(bench_erasure_and_lower
+    benchmarks/bench_erasure_and_lower.cpp
+)
+target_link_libraries(bench_erasure_and_lower PRIVATE qerasure ${QERASURE_EXTRA_LIBS})
+if(QERASURE_EXTRA_INCLUDE_DIRS)
+  target_include_directories(bench_erasure_and_lower PRIVATE ${QERASURE_EXTRA_INCLUDE_DIRS})
 endif()
 
 include(CTest)

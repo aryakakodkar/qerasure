@@ -1,8 +1,23 @@
 """Public Python API for qerasure."""
 
 from .code_utils import RotatedSurfaceCode
+from .lowering_utils import (
+    LoweredErrorParams,
+    Lowerer,
+    LoweringParams,
+    LoweringResult,
+    PauliError,
+    visualize_lowering,
+)
 from .noise_utils import NOISE_CHANNELS, NoiseChannel, NoiseParams
-from .sim_utils import ErasureSimParams, ErasureSimResult, ErasureSimulator, EventType, visualize_erasures
+from .sim_utils import (
+    ErasureQubitSelection,
+    ErasureSimParams,
+    ErasureSimResult,
+    ErasureSimulator,
+    EventType,
+    visualize_erasures,
+)
 
 __all__ = [
     "RotatedSurfaceCode",
@@ -10,8 +25,15 @@ __all__ = [
     "NoiseParams",
     "NOISE_CHANNELS",
     "EventType",
+    "ErasureQubitSelection",
     "ErasureSimParams",
     "ErasureSimResult",
     "ErasureSimulator",
+    "PauliError",
+    "LoweredErrorParams",
+    "LoweringParams",
+    "LoweringResult",
+    "Lowerer",
     "visualize_erasures",
+    "visualize_lowering",
 ]
