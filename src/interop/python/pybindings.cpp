@@ -166,6 +166,30 @@ PYBIND11_MODULE(qerasure_python, m) {
       .value("DEPOLARIZE", qerasure::PauliError::DEPOLARIZE)
       .export_values();
 
+  py::enum_<qerasure::PartnerSlot>(m, "PartnerSlot")
+      .value("X_1", qerasure::PartnerSlot::X_1)
+      .value("X_2", qerasure::PartnerSlot::X_2)
+      .value("Z_1", qerasure::PartnerSlot::Z_1)
+      .value("Z_2", qerasure::PartnerSlot::Z_2)
+      .export_values();
+
+  py::class_<qerasure::SpreadTargetOp>(m, "SpreadTargetOp")
+      .def(py::init<>())
+      .def(py::init<qerasure::PauliError, qerasure::PartnerSlot>(), py::arg("error_type"),
+           py::arg("slot"))
+      .def_readwrite("error_type", &qerasure::SpreadTargetOp::error_type)
+      .def_readwrite("slot", &qerasure::SpreadTargetOp::slot);
+
+  py::class_<qerasure::SpreadProgram>(m, "SpreadProgram")
+      .def(py::init<>())
+      .def("add_error_channel", &qerasure::SpreadProgram::add_error_channel, py::arg("probability"),
+           py::arg("targets"))
+      .def("add_correlated_error", &qerasure::SpreadProgram::add_correlated_error,
+           py::arg("probability"), py::arg("targets"))
+      .def("add_else_correlated_error", &qerasure::SpreadProgram::add_else_correlated_error,
+           py::arg("probability"), py::arg("targets"))
+      .def_readwrite("instructions", &qerasure::SpreadProgram::instructions);
+
   py::class_<qerasure::LoweredErrorParams>(m, "LoweredErrorParams")
       .def(py::init<>())
       .def_readwrite("error_type", &qerasure::LoweredErrorParams::error_type)
@@ -176,6 +200,9 @@ PYBIND11_MODULE(qerasure_python, m) {
       .def_readonly("error_type", &qerasure::LoweredErrorEvent::error_type);
 
   py::class_<qerasure::LoweringParams>(m, "LoweringParams")
+      .def(py::init<const qerasure::SpreadProgram&>(), py::arg("default_program"))
+      .def(py::init<const qerasure::SpreadProgram&, const qerasure::LoweredErrorParams&>(),
+           py::arg("default_program"), py::arg("reset"))
       .def(py::init<const qerasure::LoweredErrorParams&, const qerasure::LoweredErrorParams&>(),
            py::arg("reset"), py::arg("ancillas"))
       .def(py::init<const qerasure::LoweredErrorParams&, const qerasure::LoweredErrorParams&,
@@ -185,9 +212,16 @@ PYBIND11_MODULE(qerasure_python, m) {
                     const std::pair<qerasure::LoweredErrorParams, qerasure::LoweredErrorParams>&,
                     const std::pair<qerasure::LoweredErrorParams, qerasure::LoweredErrorParams>&>(),
            py::arg("reset"), py::arg("x_ancillas"), py::arg("z_ancillas"))
+      .def("set_default_data_program", &qerasure::LoweringParams::set_default_data_program,
+           py::arg("program"))
+      .def("set_data_qubit_program", &qerasure::LoweringParams::set_data_qubit_program,
+           py::arg("data_qubit_idx"), py::arg("program"))
       .def_readwrite("reset_params_", &qerasure::LoweringParams::reset_params_)
       .def_readwrite("x_ancilla_params_", &qerasure::LoweringParams::x_ancilla_params_)
-      .def_readwrite("z_ancilla_params_", &qerasure::LoweringParams::z_ancilla_params_);
+      .def_readwrite("z_ancilla_params_", &qerasure::LoweringParams::z_ancilla_params_)
+      .def_readwrite("default_data_program", &qerasure::LoweringParams::default_data_program)
+      .def_readwrite("per_data_program_overrides",
+                     &qerasure::LoweringParams::per_data_program_overrides);
 
   py::class_<qerasure::LoweringResult>(m, "LoweringResult")
       .def_readonly("sparse_cliffords", &qerasure::LoweringResult::sparse_cliffords)

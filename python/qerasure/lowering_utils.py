@@ -9,6 +9,7 @@ from ._bindings import cpp
 from .sim_utils import ErasureSimParams, ErasureSimResult, _normalize_qubit_subset
 
 PauliError = cpp.PauliError
+PartnerSlot = cpp.PartnerSlot
 
 
 @dataclass
@@ -19,6 +20,15 @@ class LoweredErrorParams:
     probability: float
 
     def __init__(self, error_type: object = PauliError.NO_ERROR, probability: float = 0.0):
+        # Accept legacy-swapped positional usage: LoweredErrorParams(probability, error_type).
+        if isinstance(error_type, (float, int)) and probability in (
+            PauliError.NO_ERROR,
+            PauliError.X_ERROR,
+            PauliError.Z_ERROR,
+            PauliError.Y_ERROR,
+            PauliError.DEPOLARIZE,
+        ):
+            error_type, probability = probability, error_type
         self.error_type = error_type
         self.probability = float(probability)
 
@@ -30,22 +40,114 @@ class LoweredErrorParams:
 
 
 @dataclass
+class SpreadTargetOp:
+    error_type: object
+    slot: object
+
+    def __init__(self, error_type: object, slot: object):
+        self.error_type = error_type
+        self.slot = slot
+
+    def _to_cpp(self):
+        return cpp.SpreadTargetOp(self.error_type, self.slot)
+
+
+@dataclass
+class SpreadProgram:
+    """Stim-like lowering instruction program."""
+
+    _cpp_program: object
+
+    def __init__(self):
+        self._cpp_program = cpp.SpreadProgram()
+
+    def add_error_channel(self, probability: float, targets: list[SpreadTargetOp]) -> None:
+        self._cpp_program.add_error_channel(float(probability), [t._to_cpp() for t in targets])
+
+    def add_correlated_error(self, probability: float, targets: list[SpreadTargetOp]) -> None:
+        self._cpp_program.add_correlated_error(float(probability), [t._to_cpp() for t in targets])
+
+    def add_else_correlated_error(self, probability: float, targets: list[SpreadTargetOp]) -> None:
+        self._cpp_program.add_else_correlated_error(float(probability), [t._to_cpp() for t in targets])
+
+    def _to_cpp(self):
+        return self._cpp_program
+
+
+@dataclass
 class LoweringParams:
     """Python facade around C++ LoweringParams."""
 
     reset_params: LoweredErrorParams
-    x_ancillas: object
+    x_ancillas: object | None = None
     z_ancillas: object | None = None
+    default_program: SpreadProgram | None = None
+    _cpp_params: object | None = None
 
-    def _to_cpp(self):
+    def __init__(
+        self,
+        reset_params: LoweredErrorParams | SpreadProgram | None = None,
+        x_ancillas: object | LoweredErrorParams | None = None,
+        z_ancillas: object | None = None,
+        default_program: SpreadProgram | None = None,
+    ):
+        # Accept intuitive positional form: LoweringParams(program, reset_params).
+        if isinstance(reset_params, SpreadProgram):
+            default_program = reset_params
+            reset_params = (
+                x_ancillas
+                if isinstance(x_ancillas, LoweredErrorParams)
+                else LoweredErrorParams(PauliError.NO_ERROR, 0.0)
+            )
+            x_ancillas = None
+            z_ancillas = None
+
+        self.reset_params = (
+            reset_params if reset_params is not None else LoweredErrorParams(PauliError.NO_ERROR, 0.0)
+        )
+        self.x_ancillas = x_ancillas
+        self.z_ancillas = z_ancillas
+        self.default_program = default_program
+
         reset_cpp = self.reset_params._to_cpp()
+        if default_program is not None:
+            self._cpp_params = cpp.LoweringParams(default_program._to_cpp(), reset_cpp)
+            return
+
         if isinstance(self.x_ancillas, tuple):
             x_cpp = (self.x_ancillas[0]._to_cpp(), self.x_ancillas[1]._to_cpp())
             z_cpp = (self.z_ancillas[0]._to_cpp(), self.z_ancillas[1]._to_cpp())
-            return cpp.LoweringParams(reset_cpp, x_cpp, z_cpp)
-        if self.z_ancillas is None:
-            return cpp.LoweringParams(reset_cpp, self.x_ancillas._to_cpp())
-        return cpp.LoweringParams(reset_cpp, self.x_ancillas._to_cpp(), self.z_ancillas._to_cpp())
+            self._cpp_params = cpp.LoweringParams(reset_cpp, x_cpp, z_cpp)
+            return
+        if self.z_ancillas is None and self.x_ancillas is not None:
+            self._cpp_params = cpp.LoweringParams(reset_cpp, self.x_ancillas._to_cpp())
+            return
+        if self.x_ancillas is not None and self.z_ancillas is not None:
+            self._cpp_params = cpp.LoweringParams(
+                reset_cpp, self.x_ancillas._to_cpp(), self.z_ancillas._to_cpp()
+            )
+            return
+
+        # Default to an empty program configuration for concise construction.
+        self._cpp_params = cpp.LoweringParams(cpp.SpreadProgram(), reset_cpp)
+
+    @classmethod
+    def with_program(
+        cls,
+        program: SpreadProgram,
+        reset_params: LoweredErrorParams | None = None,
+    ) -> "LoweringParams":
+        """Preferred construction path for Stim-like lowering programs."""
+        return cls(reset_params=reset_params, default_program=program)
+
+    def _to_cpp(self):
+        return self._cpp_params
+
+    def set_default_data_program(self, program: SpreadProgram) -> None:
+        self._cpp_params.set_default_data_program(program._to_cpp())
+
+    def set_data_qubit_program(self, data_qubit_idx: int, program: SpreadProgram) -> None:
+        self._cpp_params.set_data_qubit_program(int(data_qubit_idx), program._to_cpp())
 
 
 @dataclass

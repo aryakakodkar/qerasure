@@ -41,9 +41,18 @@ int main(int argc, char* argv[]) {
   qerasure::ErasureSimParams sim_params(code, noise, rounds, shots, seed);
   qerasure::ErasureSimulator simulator(sim_params);
 
+  qerasure::SpreadProgram default_data_program;
+  default_data_program.add_error_channel(
+      0.5, {{qerasure::PauliError::X_ERROR, qerasure::PartnerSlot::X_1}});
+  default_data_program.add_error_channel(
+      0.5, {{qerasure::PauliError::X_ERROR, qerasure::PartnerSlot::X_2}});
+  default_data_program.add_error_channel(
+      0.5, {{qerasure::PauliError::X_ERROR, qerasure::PartnerSlot::Z_1}});
+  default_data_program.add_error_channel(
+      0.5, {{qerasure::PauliError::X_ERROR, qerasure::PartnerSlot::Z_2}});
   qerasure::LoweredErrorParams reset_params{qerasure::PauliError::Z_ERROR, 1.0};
-  qerasure::LoweredErrorParams ancilla_params{qerasure::PauliError::X_ERROR, 0.5};
-  qerasure::LoweringParams lowering_params(reset_params, ancilla_params);
+  qerasure::LoweringParams lowering_params(default_data_program, reset_params);
+
   qerasure::Lowerer lowerer(code, lowering_params);
 
   const auto start = std::chrono::steady_clock::now();
