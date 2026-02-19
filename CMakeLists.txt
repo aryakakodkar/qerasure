@@ -28,6 +28,7 @@ add_library(qerasure
     src/core/noise/noise_params.cpp
     src/core/sim/erasure_simulator.cpp
     src/core/lowering/lowering.cpp
+    src/core/translation/stim_translation.cpp
 )
 
 target_include_directories(qerasure
@@ -76,6 +77,12 @@ if(BUILD_TESTING)
       tests/statistical_convergence_test.cpp
   )
   target_link_libraries(statistical_convergence_test PRIVATE qerasure)
+
+  add_executable(stim_translation_test
+      tests/stim_translation_test.cpp
+  )
+  target_link_libraries(stim_translation_test PRIVATE qerasure)
+  add_test(NAME stim_translation_test COMMAND stim_translation_test)
 endif()
 
 include(FetchContent)
