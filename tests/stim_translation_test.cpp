@@ -73,8 +73,8 @@ int main() {
     throw std::runtime_error("Expected one logical observable include");
   }
 
-  const std::size_t expected_detectors =
-      num_z_ancillas + (extraction_rounds - 1) * num_ancillas + num_z_ancillas;
+  // Only Z ancillas are exposed as detectors each extraction round, plus final Z-plaquette detectors.
+  const std::size_t expected_detectors = extraction_rounds * num_z_ancillas + num_z_ancillas;
   if (count_prefix(lines, "DETECTOR") != expected_detectors) {
     throw std::runtime_error("Unexpected number of DETECTOR instructions");
   }

@@ -136,9 +136,11 @@ std::string build_surface_code_stim_circuit(const RotatedSurfaceCode& code, std:
         append_detector_op(&circuit, {current_lookback});
       }
     } else {
-      for (std::size_t ai = 0; ai < num_anc; ++ai) {
-        const uint32_t current_lookback = static_cast<uint32_t>(num_anc - ai);
-        const uint32_t previous_lookback = static_cast<uint32_t>(2 * num_anc - ai);
+      // Temporal detectors are exposed only for Z-ancilla checks.
+      for (std::size_t zi = 0; zi < num_z_anc; ++zi) {
+        const std::size_t ancilla_position = num_x_anc + zi;
+        const uint32_t current_lookback = static_cast<uint32_t>(num_anc - ancilla_position);
+        const uint32_t previous_lookback = static_cast<uint32_t>(2 * num_anc - ancilla_position);
         append_detector_op(&circuit, {current_lookback, previous_lookback});
       }
     }
