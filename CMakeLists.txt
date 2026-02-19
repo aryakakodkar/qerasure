@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(qerasure LANGUAGES CXX)
 
+if(POLICY CMP0169)
+  cmake_policy(SET CMP0169 OLD)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
