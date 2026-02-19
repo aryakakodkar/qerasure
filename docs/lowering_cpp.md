@@ -43,7 +43,10 @@ All probabilities are sampled with splitmix64-based threshold sampling.
 ## Program Assignment
 
 `LoweringParams` supports:
-- one default program for all data qubits (`set_default_data_program`)
+- preferred construction with one default program for all data qubits
+  - `LoweringParams(default_program)`
+  - `LoweringParams(default_program, reset_params)`
+- optional mutation with `set_default_data_program(...)`
 - per-data-qubit overrides (`set_data_qubit_program(data_idx, program)`)
 
 Legacy constructors are retained and internally mapped into default `ERROR_CHANNEL` instructions.
@@ -55,15 +58,12 @@ Legacy constructors are retained and internally mapped into default `ERROR_CHANN
 
 using namespace qerasure;
 
-LoweredErrorParams reset = {PauliError::NO_ERROR, 0.0};
-LoweredErrorParams legacy_none = {PauliError::NO_ERROR, 0.0};
-LoweringParams params(reset, legacy_none);
-
 SpreadProgram prog;
 prog.add_correlated_error(0.5, {{PauliError::X_ERROR, PartnerSlot::X_1}});
 prog.add_else_correlated_error(1.0, {{PauliError::X_ERROR, PartnerSlot::X_2}});
 
-params.set_default_data_program(prog);
+LoweredErrorParams reset = {PauliError::Z_ERROR, 1.0};
+LoweringParams params(prog, reset);
 // or params.set_data_qubit_program(data_idx, prog);
 ```
 

@@ -7,6 +7,9 @@ from .lowering_utils import (
     LoweringParams,
     LoweringResult,
     PauliError,
+    PartnerSlot,
+    SpreadProgram,
+    SpreadTargetOp,
     visualize_lowering,
 )
 from .noise_utils import NOISE_CHANNELS, NoiseChannel, NoiseParams
@@ -30,6 +33,9 @@ __all__ = [
     "ErasureSimResult",
     "ErasureSimulator",
     "PauliError",
+    "PartnerSlot",
+    "SpreadTargetOp",
+    "SpreadProgram",
     "LoweredErrorParams",
     "LoweringParams",
     "LoweringResult",

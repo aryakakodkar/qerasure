@@ -78,6 +78,11 @@ struct LoweringParams {
   SpreadProgram default_data_program;
   std::vector<SpreadProgram> per_data_program_overrides;
 
+  // Preferred constructor for the Stim-like lowering standard:
+  // configure reset behavior and default spread program in one object construction.
+  explicit LoweringParams(const SpreadProgram& default_program);
+  LoweringParams(const SpreadProgram& default_program, const LoweredErrorParams& reset);
+
   LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& ancillas);
   LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& x_ancillas,
                 const LoweredErrorParams& z_ancillas);

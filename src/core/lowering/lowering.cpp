@@ -11,6 +11,8 @@ namespace qerasure {
 
 namespace {
 
+// Build a default instruction program from legacy pair-based params.
+// This preserves old construction paths while routing execution through one instruction model.
 SpreadProgram make_legacy_program(const std::pair<LoweredErrorParams, LoweredErrorParams>& x_params,
                                   const std::pair<LoweredErrorParams, LoweredErrorParams>& z_params) {
   SpreadProgram program;
@@ -27,6 +29,7 @@ SpreadProgram make_legacy_program(const std::pair<LoweredErrorParams, LoweredErr
 
 }  // namespace
 
+// Program-building helpers keep the public API concise and avoid manual instruction struct wiring.
 void SpreadProgram::add_error_channel(double probability, std::vector<SpreadTargetOp> targets) {
   instructions.push_back({SpreadInstructionType::ERROR_CHANNEL, probability, std::move(targets)});
 }
@@ -40,6 +43,21 @@ void SpreadProgram::add_else_correlated_error(double probability,
   instructions.push_back(
       {SpreadInstructionType::ELSE_CORRELATED_ERROR, probability, std::move(targets)});
 }
+
+// Legacy constructors map old x/z pair params into instruction programs.
+// This keeps backward compatibility while allowing the new Stim-like execution engine.
+LoweringParams::LoweringParams(const SpreadProgram& default_program)
+    : reset_params_({PauliError::NO_ERROR, 0.0}),
+      x_ancilla_params_({{PauliError::NO_ERROR, 0.0}, {PauliError::NO_ERROR, 0.0}}),
+      z_ancilla_params_({{PauliError::NO_ERROR, 0.0}, {PauliError::NO_ERROR, 0.0}}),
+      default_data_program(default_program) {}
+
+LoweringParams::LoweringParams(const SpreadProgram& default_program,
+                               const LoweredErrorParams& reset)
+    : reset_params_(reset),
+      x_ancilla_params_({{PauliError::NO_ERROR, 0.0}, {PauliError::NO_ERROR, 0.0}}),
+      z_ancilla_params_({{PauliError::NO_ERROR, 0.0}, {PauliError::NO_ERROR, 0.0}}),
+      default_data_program(default_program) {}
 
 LoweringParams::LoweringParams(const LoweredErrorParams& reset, const LoweredErrorParams& ancillas)
     : reset_params_(reset),
@@ -76,6 +94,7 @@ void LoweringParams::set_data_qubit_program(std::size_t data_qubit_idx, const Sp
   per_data_program_overrides[data_qubit_idx] = program;
 }
 
+// Construction compiles programs once so the hot loop only executes compact instructions.
 Lowerer::Lowerer(const RotatedSurfaceCode& code, const LoweringParams& params)
     : code_(code), params_(params), rng_state_(0xA24BAED4963EE407ULL) {
   compile_programs();
@@ -85,6 +104,8 @@ std::uint8_t Lowerer::slot_to_index(PartnerSlot slot) {
   return static_cast<std::uint8_t>(slot);
 }
 
+// Compile high-level instructions into threshold-based, slot-resolved programs per data qubit.
+// This front-loads work and minimizes branches/lookups during per-shot lowering.
 void Lowerer::compile_programs() {
   const std::size_t num_data_qubits = code_.x_anc_offset();
   compiled_program_by_data_qubit_.assign(num_data_qubits, {});
@@ -133,6 +154,7 @@ std::size_t Lowerer::resolve_data_slot_qubit(std::size_t data_qubit_idx, std::ui
   return code_.data_to_z_ancilla_slots()[data_qubit_idx].second;
 }
 
+// RNG and threshold sampling mirror simulator conventions for consistent fast Bernoulli draws.
 std::uint64_t Lowerer::next_random_u64() {
   return internal::splitmix64_next(&rng_state_);
 }
@@ -158,6 +180,8 @@ bool Lowerer::sample_with_threshold(std::uint64_t threshold) {
   return next_random_u64() <= threshold;
 }
 
+// Lowering consumes sparse erasure events, maintains persistent erased state, and emits Pauli events.
+// Programs are interpreted per erased data qubit at each gate timestep to realize Stim-like semantics.
 LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
   LoweringResult result;
   result.sparse_cliffords.resize(sim_result.sparse_erasures.size());
@@ -190,6 +214,7 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
     for (std::size_t t = 0; t + 1 < offsets.size(); ++t) {
       const std::size_t end_index = offsets[t + 1];
 
+      // First update erased/reset state from simulator events at this timestep.
       for (; event_index < end_index; ++event_index) {
         const EventType event_type = events[event_index].event_type;
         const std::size_t qubit_idx = events[event_index].qubit_idx;
@@ -220,8 +245,16 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
 
       if (t < offsets.size() - 2) {
         // Stim-like lowering applies only for erased data qubits, since spread slots are data-relative.
+        // We execute the compiled instruction chain per erased data qubit.
+        const std::size_t step = t % 4;
+        const std::size_t step_base = step * num_qubits;
         for (const std::size_t erased_qubit : erased_qubits) {
           if (erased_qubit >= num_data_qubits) {
+            continue;
+          }
+          // Spread only to the ancilla actively interacting with this erased data qubit now.
+          const std::size_t current_partner = code_.partner_map()[step_base + erased_qubit];
+          if (current_partner == kNoPartner) {
             continue;
           }
           const CompiledProgram& program = compiled_program_by_data_qubit_[erased_qubit];
@@ -235,6 +268,7 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
               continue;
             }
 
+            // CORRELATED_ERROR/ELSE_CORRELATED_ERROR share one local flag per chain execution.
             const bool fires = sample_with_threshold(instruction.threshold);
             if (instruction.type == SpreadInstructionType::CORRELATED_ERROR ||
                 instruction.type == SpreadInstructionType::ELSE_CORRELATED_ERROR) {
@@ -246,6 +280,9 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
 
             for (const CompiledTargetOp& target : instruction.targets) {
               if (target.error_type == PauliError::NO_ERROR || target.qubit_idx == kNoPartner) {
+                continue;
+              }
+              if (target.qubit_idx != current_partner) {
                 continue;
               }
               lowered_events.push_back({target.qubit_idx, target.error_type});
