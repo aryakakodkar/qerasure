@@ -35,10 +35,12 @@ target_include_directories(qerasure
         ${CMAKE_SOURCE_DIR}/include
 )
 
-add_executable(run_sim
-    apps/run_sim.cpp
-)
-target_link_libraries(run_sim PRIVATE qerasure)
+if(EXISTS "${CMAKE_SOURCE_DIR}/apps/run_sim.cpp")
+  add_executable(run_sim
+      apps/run_sim.cpp
+  )
+  target_link_libraries(run_sim PRIVATE qerasure)
+endif()
 
 add_executable(bench_erasure_sim
     benchmarks/bench_erasure_sim.cpp
@@ -69,6 +71,11 @@ if(BUILD_TESTING)
   )
   target_link_libraries(lowering_standard_test PRIVATE qerasure)
   add_test(NAME lowering_standard_test COMMAND lowering_standard_test)
+
+  add_executable(statistical_convergence_test
+      tests/statistical_convergence_test.cpp
+  )
+  target_link_libraries(statistical_convergence_test PRIVATE qerasure)
 endif()
 
 include(FetchContent)
