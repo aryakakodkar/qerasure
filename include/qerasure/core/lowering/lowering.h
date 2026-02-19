@@ -58,7 +58,7 @@ class Lowerer {
     private:
         std::uint64_t next_random_u64();
         static std::uint64_t probability_to_threshold(double p);
-        bool sample_with_probability(double p);
+        bool sample_with_threshold(std::uint64_t threshold);
 };
 
 } // namespace qerasure
