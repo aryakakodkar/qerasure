@@ -1,11 +1,35 @@
 cmake_minimum_required(VERSION 3.16)
 project(qerasure LANGUAGES CXX)
 
+if(POLICY CMP0169)
+  cmake_policy(SET CMP0169 OLD)
+endif()
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ENABLE_GPERFTOOLS "Enable gperftools profiling support" OFF)
+
+include(FetchContent)
+
+# Pull Stim automatically and link against its C++ library for translation support.
+FetchContent_Declare(
+  stim
+  GIT_REPOSITORY https://github.com/quantumlib/Stim.git
+  GIT_TAG v1.15.0
+)
+FetchContent_GetProperties(stim)
+if(NOT stim_POPULATED)
+  FetchContent_Populate(stim)
+endif()
+
+file(STRINGS "${stim_SOURCE_DIR}/file_lists/source_files_no_main" STIM_SOURCE_FILES_REL)
+list(TRANSFORM STIM_SOURCE_FILES_REL PREPEND "${stim_SOURCE_DIR}/")
+
+add_library(qerasure_stim STATIC ${STIM_SOURCE_FILES_REL})
+target_include_directories(qerasure_stim PUBLIC "${stim_SOURCE_DIR}/src")
+target_compile_features(qerasure_stim PUBLIC cxx_std_20)
 
 set(QERASURE_EXTRA_LIBS "")
 set(QERASURE_EXTRA_INCLUDE_DIRS "")
@@ -28,7 +52,10 @@ add_library(qerasure
     src/core/noise/noise_params.cpp
     src/core/sim/erasure_simulator.cpp
     src/core/lowering/lowering.cpp
+    src/core/translation/stim_translation.cpp
 )
+target_link_libraries(qerasure PRIVATE qerasure_stim)
+target_compile_features(qerasure PUBLIC cxx_std_20)
 
 target_include_directories(qerasure
     PUBLIC
@@ -58,6 +85,11 @@ if(QERASURE_EXTRA_INCLUDE_DIRS)
   target_include_directories(bench_erasure_and_lower PRIVATE ${QERASURE_EXTRA_INCLUDE_DIRS})
 endif()
 
+add_executable(bench_stim_translation
+    benchmarks/bench_stim_translation.cpp
+)
+target_link_libraries(bench_stim_translation PRIVATE qerasure qerasure_stim)
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(smoke_sim_test
@@ -76,9 +108,14 @@ if(BUILD_TESTING)
       tests/statistical_convergence_test.cpp
   )
   target_link_libraries(statistical_convergence_test PRIVATE qerasure)
+
+  add_executable(stim_translation_test
+      tests/stim_translation_test.cpp
+  )
+  target_link_libraries(stim_translation_test PRIVATE qerasure)
+  add_test(NAME stim_translation_test COMMAND stim_translation_test)
 endif()
 
-include(FetchContent)
 if(EXISTS "${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src/CMakeLists.txt")
   add_subdirectory("${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src" pybind11-local)
 else()

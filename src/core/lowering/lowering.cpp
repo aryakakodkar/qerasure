@@ -184,6 +184,7 @@ bool Lowerer::sample_with_threshold(std::uint64_t threshold) {
 // Programs are interpreted per erased data qubit at each gate timestep to realize Stim-like semantics.
 LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
   LoweringResult result;
+  result.qec_rounds = sim_result.qec_rounds;
   result.sparse_cliffords.resize(sim_result.sparse_erasures.size());
   result.clifford_timestep_offsets.resize(sim_result.erasure_timestep_offsets.size());
 
@@ -237,7 +238,8 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
           }
           if (params_.reset_params_.error_type != PauliError::NO_ERROR &&
               sample_with_threshold(reset_threshold)) {
-            lowered_events.push_back({qubit_idx, params_.reset_params_.error_type});
+            lowered_events.push_back(
+                {qubit_idx, params_.reset_params_.error_type, LoweredEventOrigin::RESET});
             ++num_lowering_events;
           }
         }
@@ -285,7 +287,8 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
               if (target.qubit_idx != current_partner) {
                 continue;
               }
-              lowered_events.push_back({target.qubit_idx, target.error_type});
+              lowered_events.push_back(
+                  {target.qubit_idx, target.error_type, LoweredEventOrigin::SPREAD});
               ++num_lowering_events;
             }
           }

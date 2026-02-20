@@ -76,6 +76,9 @@ struct ErasureSimEvent {
 // - per-shot event vectors
 // - per-shot timestep offsets into each event vector
 struct ErasureSimResult {
+  // Number of syndrome-extraction rounds used to produce this result.
+  std::size_t qec_rounds = 0;
+
   // For each shot: list of sparse events in chronological order.
   std::vector<std::vector<ErasureSimEvent>> sparse_erasures;
 
