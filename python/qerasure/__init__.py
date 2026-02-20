@@ -3,6 +3,7 @@
 from .code_utils import RotatedSurfaceCode
 from .lowering_utils import (
     LoweredErrorParams,
+    LoweredEventOrigin,
     Lowerer,
     LoweringParams,
     LoweringResult,
@@ -43,6 +44,7 @@ __all__ = [
     "SpreadTargetOp",
     "SpreadProgram",
     "LoweredErrorParams",
+    "LoweredEventOrigin",
     "LoweringParams",
     "LoweringResult",
     "Lowerer",

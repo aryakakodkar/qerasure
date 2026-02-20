@@ -9,6 +9,7 @@ from ._bindings import cpp
 from .sim_utils import ErasureSimParams, ErasureSimResult, _normalize_qubit_subset
 
 PauliError = cpp.PauliError
+LoweredEventOrigin = cpp.LoweredEventOrigin
 PartnerSlot = cpp.PartnerSlot
 
 

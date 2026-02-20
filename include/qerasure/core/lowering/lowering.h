@@ -23,9 +23,15 @@ struct LoweredErrorParams {
   double probability = 0.0;
 };
 
+enum class LoweredEventOrigin : std::uint8_t {
+  SPREAD = 0,
+  RESET = 1,
+};
+
 struct LoweredErrorEvent {
   std::size_t qubit_idx;
   PauliError error_type;
+  LoweredEventOrigin origin = LoweredEventOrigin::SPREAD;
 };
 
 struct LoweringResult {

@@ -168,6 +168,11 @@ PYBIND11_MODULE(qerasure_python, m) {
       .value("DEPOLARIZE", qerasure::PauliError::DEPOLARIZE)
       .export_values();
 
+  py::enum_<qerasure::LoweredEventOrigin>(m, "LoweredEventOrigin")
+      .value("SPREAD", qerasure::LoweredEventOrigin::SPREAD)
+      .value("RESET", qerasure::LoweredEventOrigin::RESET)
+      .export_values();
+
   py::enum_<qerasure::PartnerSlot>(m, "PartnerSlot")
       .value("X_1", qerasure::PartnerSlot::X_1)
       .value("X_2", qerasure::PartnerSlot::X_2)
@@ -199,7 +204,8 @@ PYBIND11_MODULE(qerasure_python, m) {
 
   py::class_<qerasure::LoweredErrorEvent>(m, "LoweredErrorEvent")
       .def_readonly("qubit_idx", &qerasure::LoweredErrorEvent::qubit_idx)
-      .def_readonly("error_type", &qerasure::LoweredErrorEvent::error_type);
+      .def_readonly("error_type", &qerasure::LoweredErrorEvent::error_type)
+      .def_readonly("origin", &qerasure::LoweredErrorEvent::origin);
 
   py::class_<qerasure::LoweringParams>(m, "LoweringParams")
       .def(py::init<const qerasure::SpreadProgram&>(), py::arg("default_program"))

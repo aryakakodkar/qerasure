@@ -194,23 +194,27 @@ void append_final_readout_detectors_and_observable(stim::Circuit* circuit, const
 }
 
 // Hooks allows interleaving of pre-simulated errors
-template <typename StepHook>
+template <typename PreStepHook, typename PostStepHook, typename PreMeasureHook>
 void append_extraction_round(stim::Circuit* circuit, const CircuitBuildContext& ctx,
-                             std::size_t round_index, StepHook&& step_hook,
+                             std::size_t round_index, PreStepHook&& pre_step_hook,
+                             PostStepHook&& post_step_hook, PreMeasureHook&& pre_measure_hook,
                              std::vector<uint32_t>* detector_lookbacks,
                              std::vector<uint32_t>* detector_targets) {
   append_index_op(circuit, "H", ctx.x_ancillas_u32);
   for (std::size_t step = 0; step < 4; ++step) {
+    pre_step_hook(round_index, step);
     circuit->safe_append_u("CX", ctx.cx_targets_by_step[step]);
-    step_hook(round_index, step);
+    post_step_hook(round_index, step);
   }
   append_index_op(circuit, "H", ctx.x_ancillas_u32);
+  pre_measure_hook(round_index);
   append_index_op(circuit, "MR", ctx.ancillas_u32);
   append_round_detectors(circuit, ctx, round_index, detector_lookbacks, detector_targets);
 }
 
 void append_lowering_timestep_errors(stim::Circuit* circuit, const std::vector<LoweredErrorEvent>& events,
                                      std::size_t start, std::size_t end,
+                                     LoweredEventOrigin origin_filter,
                                      std::vector<uint32_t>* x_targets,
                                      std::vector<uint32_t>* y_targets,
                                      std::vector<uint32_t>* z_targets,
@@ -222,6 +226,9 @@ void append_lowering_timestep_errors(stim::Circuit* circuit, const std::vector<L
 
   for (std::size_t k = start; k < end; ++k) {
     const LoweredErrorEvent& event = events[k];
+    if (event.origin != origin_filter) {
+      continue;
+    }
     const uint32_t q = static_cast<uint32_t>(event.qubit_idx);
     switch (event.error_type) {
       case PauliError::NO_ERROR:
@@ -249,6 +256,9 @@ void append_lowering_timestep_errors(stim::Circuit* circuit, const std::vector<L
 
 }  // namespace
 
+// Builds a Stim circuit object for a standard surface code quantum memory
+// Note: this code does not employ repeat blocks, and is therefore inefficient for large numbers of rounds.
+// It is intended for injection of pre-simulated errors 
 stim::Circuit build_surf_stabilizer_circuit_object(const RotatedSurfaceCode& code, std::size_t qec_rounds) {
   if (qec_rounds < 2) {
     throw std::invalid_argument("qec_rounds must be >= 2 for stabilizer-only circuit generation");
@@ -264,10 +274,16 @@ stim::Circuit build_surf_stabilizer_circuit_object(const RotatedSurfaceCode& cod
 
   // Reuse prebuilt round bodies for fast pure-stabilizer generation.
   stim::Circuit first_round_body;
-  append_extraction_round(&first_round_body, ctx, 0, [](std::size_t, std::size_t) {},
+  append_extraction_round(&first_round_body, ctx, 0,
+                          [](std::size_t, std::size_t) {},
+                          [](std::size_t, std::size_t) {},
+                          [](std::size_t) {},
                           &detector_lookbacks, &detector_targets);
   stim::Circuit temporal_round_body;
-  append_extraction_round(&temporal_round_body, ctx, 1, [](std::size_t, std::size_t) {},
+  append_extraction_round(&temporal_round_body, ctx, 1,
+                          [](std::size_t, std::size_t) {},
+                          [](std::size_t, std::size_t) {},
+                          [](std::size_t) {},
                           &detector_lookbacks, &detector_targets);
 
   stim::Circuit circuit;
@@ -294,6 +310,9 @@ std::string build_surface_code_stim_circuit(const RotatedSurfaceCode& code, std:
   return build_surf_stabilizer_circuit(code, qec_rounds);
 }
 
+// Builds a Stim circuit object for a surface code quantum memory with interleaved errors from 
+// results of a lowered erasure simulation. Resulting circuit is logically equivalent to erasure
+// circuit under specified lowering assumptions
 stim::Circuit build_logical_stabilizer_circuit_object(
     const RotatedSurfaceCode& code, const LoweringResult& lowering_result, std::size_t shot_index) {
   if (shot_index >= lowering_result.sparse_cliffords.size() ||
@@ -328,20 +347,34 @@ stim::Circuit build_logical_stabilizer_circuit_object(
   z_error_targets.reserve(16);
   depolarize_targets.reserve(16);
 
-  auto step_hook = [&](std::size_t round, std::size_t step) {
+  auto pre_step_hook = [](std::size_t, std::size_t) {};
+
+  auto post_step_hook = [&](std::size_t round, std::size_t step) {
     const std::size_t timestep = round * 4 + step;
     append_lowering_timestep_errors(&circuit, shot_events, offsets[timestep], offsets[timestep + 1],
+                                    LoweredEventOrigin::SPREAD,
                                     &x_error_targets, &y_error_targets, &z_error_targets,
                                     &depolarize_targets);
   };
+  auto pre_measure_hook = [&](std::size_t round) {
+    const std::size_t reset_timestep = (round + 1) * 4;
+    if (reset_timestep + 1 < offsets.size()) {
+      append_lowering_timestep_errors(&circuit, shot_events, offsets[reset_timestep],
+                                      offsets[reset_timestep + 1], LoweredEventOrigin::RESET,
+                                      &x_error_targets, &y_error_targets, &z_error_targets,
+                                      &depolarize_targets);
+    }
+  };
 
   for (std::size_t round = 0; round < qec_rounds; ++round) {
-    append_extraction_round(&circuit, ctx, round, step_hook, &detector_lookbacks, &detector_targets);
+    append_extraction_round(&circuit, ctx, round, pre_step_hook, post_step_hook, pre_measure_hook,
+                            &detector_lookbacks, &detector_targets);
   }
 
   const std::size_t terminal_timestep = qec_rounds * 4;
   append_lowering_timestep_errors(&circuit, shot_events, offsets[terminal_timestep],
-                                  offsets[terminal_timestep + 1], &x_error_targets,
+                                  offsets[terminal_timestep + 1], LoweredEventOrigin::SPREAD,
+                                  &x_error_targets,
                                   &y_error_targets, &z_error_targets, &depolarize_targets);
 
   append_final_readout_detectors_and_observable(&circuit, ctx, &detector_lookbacks, &detector_targets);

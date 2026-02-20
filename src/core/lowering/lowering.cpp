@@ -238,7 +238,8 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
           }
           if (params_.reset_params_.error_type != PauliError::NO_ERROR &&
               sample_with_threshold(reset_threshold)) {
-            lowered_events.push_back({qubit_idx, params_.reset_params_.error_type});
+            lowered_events.push_back(
+                {qubit_idx, params_.reset_params_.error_type, LoweredEventOrigin::RESET});
             ++num_lowering_events;
           }
         }
@@ -286,7 +287,8 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
               if (target.qubit_idx != current_partner) {
                 continue;
               }
-              lowered_events.push_back({target.qubit_idx, target.error_type});
+              lowered_events.push_back(
+                  {target.qubit_idx, target.error_type, LoweredEventOrigin::SPREAD});
               ++num_lowering_events;
             }
           }

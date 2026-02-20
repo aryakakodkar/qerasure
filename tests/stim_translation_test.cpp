@@ -110,13 +110,14 @@ int main() {
   }
 
   LoweringResult lowering;
-  lowering.qec_rounds = 1;
+  lowering.qec_rounds = 2;
   lowering.sparse_cliffords.resize(1);
   lowering.clifford_timestep_offsets.resize(1);
-  // Timesteps 0..4 plus terminal offset.
-  lowering.clifford_timestep_offsets[0] = {0, 1, 1, 1, 1, 2};
-  lowering.sparse_cliffords[0].push_back({5, PauliError::X_ERROR});
-  lowering.sparse_cliffords[0].push_back({1, PauliError::Z_ERROR});
+  // Timesteps 0..8 plus terminal offset.
+  lowering.clifford_timestep_offsets[0] = {0, 1, 1, 1, 1, 2, 2, 2, 2, 3};
+  lowering.sparse_cliffords[0].push_back({6, PauliError::Z_ERROR, LoweredEventOrigin::SPREAD});  // t=0
+  lowering.sparse_cliffords[0].push_back({5, PauliError::X_ERROR, LoweredEventOrigin::RESET});   // t=4
+  lowering.sparse_cliffords[0].push_back({1, PauliError::Y_ERROR, LoweredEventOrigin::SPREAD});  // t=8
 
   const std::string lowered_circuit =
       build_logically_equivalent_erasure_stim_circuit(code, lowering, 0);
@@ -128,11 +129,38 @@ int main() {
   if (count_prefix(lowered_lines, "Z_ERROR(1)") != 1) {
     throw std::runtime_error("Expected one injected Z_ERROR(1) from lowering events");
   }
+  if (count_prefix(lowered_lines, "Y_ERROR(1)") != 1) {
+    throw std::runtime_error("Expected one injected Y_ERROR(1) from lowering events");
+  }
   const std::size_t first_cx = first_index_of_prefix(lowered_lines, "CX ");
   const std::size_t first_x_error = first_index_of_prefix(lowered_lines, "X_ERROR(1)");
+  const std::size_t first_z_error = first_index_of_prefix(lowered_lines, "Z_ERROR(1)");
+  std::size_t first_round_second_h = static_cast<std::size_t>(-1);
+  std::size_t first_round_mr = static_cast<std::size_t>(-1);
+  std::size_t h_seen = 0;
+  std::size_t mr_seen = 0;
+  for (std::size_t i = 0; i < lowered_lines.size(); ++i) {
+    if (starts_with(lowered_lines[i], "H ")) {
+      ++h_seen;
+      if (h_seen == 2) {
+        first_round_second_h = i;
+      }
+    }
+    if (starts_with(lowered_lines[i], "MR ")) {
+      ++mr_seen;
+      if (mr_seen == 1) {
+        first_round_mr = i;
+      }
+    }
+  }
   if (first_cx == static_cast<std::size_t>(-1) || first_x_error == static_cast<std::size_t>(-1) ||
-      first_x_error <= first_cx) {
-    throw std::runtime_error("Lowering gate-step errors must be injected after the corresponding CX step");
+      first_round_second_h == static_cast<std::size_t>(-1) || first_round_mr == static_cast<std::size_t>(-1) ||
+      first_x_error <= first_round_second_h || first_x_error >= first_round_mr) {
+    throw std::runtime_error(
+        "Reset-origin lowering errors must be injected after second H and before MR in the same round");
+  }
+  if (first_z_error == static_cast<std::size_t>(-1) || first_z_error <= first_cx) {
+    throw std::runtime_error("Spread-origin lowering errors must be injected after the corresponding CX step");
   }
 
   return 0;
