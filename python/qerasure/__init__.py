@@ -21,7 +21,12 @@ from .sim_utils import (
     EventType,
     visualize_erasures,
 )
-from .translation_utils import build_surface_code_stim_circuit
+from .translation_utils import (
+    build_logical_stabilizer_circuit,
+    build_logically_equivalent_erasure_stim_circuit,
+    build_surf_stabilizer_circuit,
+    build_surface_code_stim_circuit,
+)
 
 __all__ = [
     "RotatedSurfaceCode",
@@ -41,7 +46,10 @@ __all__ = [
     "LoweringParams",
     "LoweringResult",
     "Lowerer",
+    "build_surf_stabilizer_circuit",
     "build_surface_code_stim_circuit",
+    "build_logical_stabilizer_circuit",
+    "build_logically_equivalent_erasure_stim_circuit",
     "visualize_erasures",
     "visualize_lowering",
 ]

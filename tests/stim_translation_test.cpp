@@ -1,4 +1,5 @@
 #include "qerasure/core/code/rotated_surface_code.h"
+#include "qerasure/core/lowering/lowering.h"
 #include "qerasure/core/translation/stim_translation.h"
 
 #include <stdexcept>
@@ -35,6 +36,15 @@ std::size_t count_prefix(const std::vector<std::string>& lines, const char* pref
     }
   }
   return count;
+}
+
+std::size_t first_index_of_prefix(const std::vector<std::string>& lines, const char* prefix) {
+  for (std::size_t i = 0; i < lines.size(); ++i) {
+    if (starts_with(lines[i], prefix)) {
+      return i;
+    }
+  }
+  return static_cast<std::size_t>(-1);
 }
 
 }  // namespace
@@ -97,6 +107,32 @@ int main() {
   }
   if (!found_temporal_detector) {
     throw std::runtime_error("Expected temporal detector parity checks between rounds");
+  }
+
+  LoweringResult lowering;
+  lowering.qec_rounds = 1;
+  lowering.sparse_cliffords.resize(1);
+  lowering.clifford_timestep_offsets.resize(1);
+  // Timesteps 0..4 plus terminal offset.
+  lowering.clifford_timestep_offsets[0] = {0, 1, 1, 1, 1, 2};
+  lowering.sparse_cliffords[0].push_back({5, PauliError::X_ERROR});
+  lowering.sparse_cliffords[0].push_back({1, PauliError::Z_ERROR});
+
+  const std::string lowered_circuit =
+      build_logically_equivalent_erasure_stim_circuit(code, lowering, 0);
+  const std::vector<std::string> lowered_lines = split_lines(lowered_circuit);
+
+  if (count_prefix(lowered_lines, "X_ERROR(1)") != 1) {
+    throw std::runtime_error("Expected one injected X_ERROR(1) from lowering events");
+  }
+  if (count_prefix(lowered_lines, "Z_ERROR(1)") != 1) {
+    throw std::runtime_error("Expected one injected Z_ERROR(1) from lowering events");
+  }
+  const std::size_t first_cx = first_index_of_prefix(lowered_lines, "CX ");
+  const std::size_t first_x_error = first_index_of_prefix(lowered_lines, "X_ERROR(1)");
+  if (first_cx == static_cast<std::size_t>(-1) || first_x_error == static_cast<std::size_t>(-1) ||
+      first_x_error <= first_cx) {
+    throw std::runtime_error("Lowering gate-step errors must be injected after the corresponding CX step");
   }
 
   return 0;

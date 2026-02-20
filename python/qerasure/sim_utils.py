@@ -42,6 +42,7 @@ class ErasureSimParams:
 
 @dataclass
 class ErasureSimResult:
+    qec_rounds: int
     sparse_erasures: list
     erasure_timestep_offsets: list
     _cpp_result: object | None = None
@@ -49,6 +50,7 @@ class ErasureSimResult:
     @classmethod
     def from_cpp(cls, cpp_result) -> "ErasureSimResult":
         return cls(
+            qec_rounds=int(getattr(cpp_result, "qec_rounds", 0)),
             sparse_erasures=cpp_result.sparse_erasures,
             erasure_timestep_offsets=cpp_result.erasure_timestep_offsets,
             _cpp_result=cpp_result,

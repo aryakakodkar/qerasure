@@ -152,6 +152,7 @@ PYBIND11_MODULE(qerasure_python, m) {
       .def_readonly("event_type", &qerasure::ErasureSimEvent::event_type);
 
   py::class_<qerasure::ErasureSimResult>(m, "ErasureSimResult")
+      .def_readonly("qec_rounds", &qerasure::ErasureSimResult::qec_rounds)
       .def_readonly("sparse_erasures", &qerasure::ErasureSimResult::sparse_erasures)
       .def_readonly("erasure_timestep_offsets", &qerasure::ErasureSimResult::erasure_timestep_offsets);
 
@@ -225,6 +226,7 @@ PYBIND11_MODULE(qerasure_python, m) {
                      &qerasure::LoweringParams::per_data_program_overrides);
 
   py::class_<qerasure::LoweringResult>(m, "LoweringResult")
+      .def_readonly("qec_rounds", &qerasure::LoweringResult::qec_rounds)
       .def_readonly("sparse_cliffords", &qerasure::LoweringResult::sparse_cliffords)
       .def_readonly("clifford_timestep_offsets", &qerasure::LoweringResult::clifford_timestep_offsets);
 
@@ -233,7 +235,17 @@ PYBIND11_MODULE(qerasure_python, m) {
            py::arg("code"), py::arg("params"))
       .def("lower", &qerasure::Lowerer::lower);
 
+  m.def("build_surf_stabilizer_circuit", &qerasure::build_surf_stabilizer_circuit,
+        py::arg("code"), py::arg("qec_rounds"),
+        "Generate a Stim-format rotated-surface stabilizer circuit string.");
   m.def("build_surface_code_stim_circuit", &qerasure::build_surface_code_stim_circuit,
         py::arg("code"), py::arg("qec_rounds"),
         "Generate a Stim-format rotated-surface-code circuit string.");
+  m.def("build_logical_stabilizer_circuit", &qerasure::build_logical_stabilizer_circuit,
+        py::arg("code"), py::arg("lowering_result"), py::arg("shot_index") = 0,
+        "Generate a Stim-format logical stabilizer circuit with injected lowered errors.");
+  m.def("build_logically_equivalent_erasure_stim_circuit",
+        &qerasure::build_logically_equivalent_erasure_stim_circuit, py::arg("code"),
+        py::arg("lowering_result"), py::arg("shot_index") = 0,
+        "Generate a Stim-format circuit with deterministic lowered-erasure errors injected by timestep.");
 }

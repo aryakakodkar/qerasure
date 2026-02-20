@@ -182,6 +182,7 @@ ErasureSimResult ErasureSimulator::simulate() {
       probability_to_threshold(params_.noise.get(NoiseChannel::kErasureCheckError));
 
   ErasureSimResult result;
+  result.qec_rounds = params_.qec_rounds;
   result.sparse_erasures.resize(params_.shots);
   result.erasure_timestep_offsets.resize(params_.shots);
 

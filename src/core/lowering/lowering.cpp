@@ -184,6 +184,7 @@ bool Lowerer::sample_with_threshold(std::uint64_t threshold) {
 // Programs are interpreted per erased data qubit at each gate timestep to realize Stim-like semantics.
 LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
   LoweringResult result;
+  result.qec_rounds = sim_result.qec_rounds;
   result.sparse_cliffords.resize(sim_result.sparse_erasures.size());
   result.clifford_timestep_offsets.resize(sim_result.erasure_timestep_offsets.size());
 

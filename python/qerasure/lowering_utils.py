@@ -152,14 +152,18 @@ class LoweringParams:
 
 @dataclass
 class LoweringResult:
+    qec_rounds: int
     sparse_cliffords: list
     clifford_timestep_offsets: list
+    _cpp_result: object | None = None
 
     @classmethod
     def from_cpp(cls, cpp_result) -> "LoweringResult":
         return cls(
+            qec_rounds=int(getattr(cpp_result, "qec_rounds", 0)),
             sparse_cliffords=cpp_result.sparse_cliffords,
             clifford_timestep_offsets=cpp_result.clifford_timestep_offsets,
+            _cpp_result=cpp_result,
         )
 
 

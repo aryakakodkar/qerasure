@@ -85,6 +85,11 @@ if(QERASURE_EXTRA_INCLUDE_DIRS)
   target_include_directories(bench_erasure_and_lower PRIVATE ${QERASURE_EXTRA_INCLUDE_DIRS})
 endif()
 
+add_executable(bench_stim_translation
+    benchmarks/bench_stim_translation.cpp
+)
+target_link_libraries(bench_stim_translation PRIVATE qerasure qerasure_stim)
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(smoke_sim_test

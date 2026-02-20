@@ -29,6 +29,9 @@ struct LoweredErrorEvent {
 };
 
 struct LoweringResult {
+  // Number of syndrome-extraction rounds inherited from simulator output.
+  std::size_t qec_rounds = 0;
+
   std::vector<std::vector<LoweredErrorEvent>> sparse_cliffords;
   std::vector<std::vector<std::size_t>> clifford_timestep_offsets;
 };
