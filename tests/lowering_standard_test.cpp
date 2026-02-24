@@ -18,6 +18,19 @@ int main() {
       code.data_to_z_ancilla_slots()[data_idx].second == kNoPartner) {
     throw std::runtime_error("Expected all partner slots for center data qubit");
   }
+  const std::size_t step0_partner = code.partner_map()[0 * code.num_qubits() + data_idx];
+  PartnerSlot active_slot = PartnerSlot::X_1;
+  if (step0_partner == code.data_to_x_ancilla_slots()[data_idx].first) {
+    active_slot = PartnerSlot::X_1;
+  } else if (step0_partner == code.data_to_x_ancilla_slots()[data_idx].second) {
+    active_slot = PartnerSlot::X_2;
+  } else if (step0_partner == code.data_to_z_ancilla_slots()[data_idx].first) {
+    active_slot = PartnerSlot::Z_1;
+  } else if (step0_partner == code.data_to_z_ancilla_slots()[data_idx].second) {
+    active_slot = PartnerSlot::Z_2;
+  } else {
+    throw std::runtime_error("Could not resolve active slot at timestep 0 for center data qubit");
+  }
 
   ErasureSimResult sim_result;
   sim_result.sparse_erasures.resize(1);
@@ -27,13 +40,8 @@ int main() {
   sim_result.erasure_timestep_offsets[0] = {0, 1, 1};
 
   SpreadProgram program;
-  program.add_correlated_error(0.0, {{PauliError::X_ERROR, PartnerSlot::X_1}});
-  program.add_else_correlated_error(
-      1.0,
-      {{PauliError::Z_ERROR, PartnerSlot::X_1},
-       {PauliError::Z_ERROR, PartnerSlot::X_2},
-       {PauliError::Z_ERROR, PartnerSlot::Z_1},
-       {PauliError::Z_ERROR, PartnerSlot::Z_2}});
+  program.add_cond_x_error(0.0, active_slot);
+  program.add_else_z_error(1.0, active_slot);
   LoweredErrorParams reset_none{PauliError::NO_ERROR, 0.0};
   SpreadProgram default_program;
   LoweringParams params(default_program, reset_none);
@@ -52,18 +60,8 @@ int main() {
   }
 
   SpreadProgram program_fire;
-  program_fire.add_correlated_error(
-      1.0,
-      {{PauliError::X_ERROR, PartnerSlot::X_1},
-       {PauliError::X_ERROR, PartnerSlot::X_2},
-       {PauliError::X_ERROR, PartnerSlot::Z_1},
-       {PauliError::X_ERROR, PartnerSlot::Z_2}});
-  program_fire.add_else_correlated_error(
-      1.0,
-      {{PauliError::Z_ERROR, PartnerSlot::X_1},
-       {PauliError::Z_ERROR, PartnerSlot::X_2},
-       {PauliError::Z_ERROR, PartnerSlot::Z_1},
-       {PauliError::Z_ERROR, PartnerSlot::Z_2}});
+  program_fire.add_cond_x_error(1.0, active_slot);
+  program_fire.add_else_z_error(1.0, active_slot);
   params.set_data_qubit_program(data_idx, program_fire);
 
   Lowerer lowerer_fire(code, params);

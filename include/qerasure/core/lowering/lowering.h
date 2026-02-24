@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <string>
 #include <vector>
 
 #include "qerasure/core/code/rotated_surface_code.h"
@@ -40,6 +41,14 @@ struct LoweringResult {
 
   std::vector<std::vector<LoweredErrorEvent>> sparse_cliffords;
   std::vector<std::vector<std::size_t>> clifford_timestep_offsets;
+  // For each shot and each round, true if CHECK_ERROR at end of that round
+  // indicated the round contained at least one unresolved erasure.
+  std::vector<std::vector<std::uint8_t>> check_error_round_flags;
+  // For each shot and each round, true if the round had erasure evidence:
+  // either a successful RESET or a CHECK_ERROR at its end boundary.
+  std::vector<std::vector<std::uint8_t>> erasure_round_flags;
+  // Per shot reset evidence as (round_index, qubit_idx) tuples.
+  std::vector<std::vector<std::pair<std::size_t, std::size_t>>> reset_round_qubits;
 };
 
 // Data-qubit partner ancilla slots used by Stim-like lowering instructions.
@@ -51,9 +60,16 @@ enum class PartnerSlot : std::uint8_t {
 };
 
 enum class SpreadInstructionType : std::uint8_t {
-  ERROR_CHANNEL = 0,
-  CORRELATED_ERROR = 1,
-  ELSE_CORRELATED_ERROR = 2,
+  X_ERROR = 0,
+  Y_ERROR = 1,
+  Z_ERROR = 2,
+  DEPOLARIZE1 = 3,
+  COND_X_ERROR = 4,
+  COND_Y_ERROR = 5,
+  COND_Z_ERROR = 6,
+  ELSE_X_ERROR = 7,
+  ELSE_Y_ERROR = 8,
+  ELSE_Z_ERROR = 9,
 };
 
 struct SpreadTargetOp {
@@ -62,14 +78,32 @@ struct SpreadTargetOp {
 };
 
 struct SpreadInstruction {
-  SpreadInstructionType type = SpreadInstructionType::ERROR_CHANNEL;
+  SpreadInstructionType type = SpreadInstructionType::X_ERROR;
   double probability = 0.0;
-  std::vector<SpreadTargetOp> targets;
+  PartnerSlot target_slot = PartnerSlot::X_1;
 };
 
 struct SpreadProgram {
   std::vector<SpreadInstruction> instructions;
 
+  // Stim-like append path. Parses one or many semicolon-separated instructions:
+  // e.g. "X_ERROR(0.1) X_1; COND_X_ERROR(0.2) Z_1; ELSE_X_ERROR(1.0) Z_2"
+  void append(const std::string& stim_like_program);
+
+  // Strongly-typed append helpers.
+  void add_instruction(SpreadInstructionType type, double probability, PartnerSlot target);
+  void add_x_error(double probability, PartnerSlot target);
+  void add_y_error(double probability, PartnerSlot target);
+  void add_z_error(double probability, PartnerSlot target);
+  void add_depolarize1(double probability, PartnerSlot target);
+  void add_cond_x_error(double probability, PartnerSlot target);
+  void add_cond_y_error(double probability, PartnerSlot target);
+  void add_cond_z_error(double probability, PartnerSlot target);
+  void add_else_x_error(double probability, PartnerSlot target);
+  void add_else_y_error(double probability, PartnerSlot target);
+  void add_else_z_error(double probability, PartnerSlot target);
+
+  // Backward-compatible legacy helpers.
   void add_error_channel(double probability, std::vector<SpreadTargetOp> targets);
   void add_correlated_error(double probability, std::vector<SpreadTargetOp> targets);
   void add_else_correlated_error(double probability, std::vector<SpreadTargetOp> targets);
@@ -119,9 +153,9 @@ class Lowerer {
   };
 
   struct CompiledInstruction {
-    SpreadInstructionType type = SpreadInstructionType::ERROR_CHANNEL;
+    SpreadInstructionType type = SpreadInstructionType::X_ERROR;
     std::uint64_t threshold = 0;
-    std::vector<CompiledTargetOp> targets;
+    CompiledTargetOp target;
   };
 
   struct CompiledProgram {

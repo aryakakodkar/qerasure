@@ -10,7 +10,9 @@ struct Circuit;
 }
 
 namespace qerasure {
+struct LoweringParams;
 struct LoweringResult;
+struct SpreadProgram;
 
 // Build a Stim-format circuit for rotated-surface-code syndrome extraction and readout.
 //
@@ -38,5 +40,19 @@ stim::Circuit build_logically_equivalent_erasure_stim_circuit_object(
     const RotatedSurfaceCode& code, const LoweringResult& lowering_result, std::size_t shot_index = 0);
 std::string build_logically_equivalent_erasure_stim_circuit(
     const RotatedSurfaceCode& code, const LoweringResult& lowering_result, std::size_t shot_index = 0);
+
+// Build a virtual decoder circuit by injecting spread-program probabilities directly into
+// syndrome-extraction timesteps, weighted by an erasure-arrival model.
+//
+// `condition_on_erasure_in_round` controls whether first-erasure timestep probabilities are
+// normalized conditioned on "an erasure occurred within the round".
+stim::Circuit build_virtual_decoder_stim_circuit_object(
+    const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
+    const LoweringResult& lowering_result, std::size_t shot_index,
+    double two_qubit_erasure_probability, bool condition_on_erasure_in_round = true);
+std::string build_virtual_decoder_stim_circuit(
+    const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
+    const LoweringResult& lowering_result, std::size_t shot_index,
+    double two_qubit_erasure_probability, bool condition_on_erasure_in_round = true);
 
 }  // namespace qerasure

@@ -163,5 +163,36 @@ int main() {
     throw std::runtime_error("Spread-origin lowering errors must be injected after the corresponding CX step");
   }
 
+  // Virtual decoder circuit: correlated-flag carry-over must suppress ELSE instructions even when
+  // represented using valid single-target COND/ELSE instructions.
+  SpreadProgram virtual_program;
+  virtual_program.add_correlated_error(0.5, {{PauliError::X_ERROR, PartnerSlot::X_1}});
+  virtual_program.add_else_correlated_error(1.0, {{PauliError::X_ERROR, PartnerSlot::X_1}});
+  LoweringParams virtual_params(virtual_program, {PauliError::NO_ERROR, 0.0});
+  LoweringResult virtual_result;
+  virtual_result.qec_rounds = 1;
+  virtual_result.check_error_round_flags = {{1}};
+  virtual_result.erasure_round_flags = {{1}};
+  const std::string virtual_circuit =
+      build_virtual_decoder_stim_circuit(code, 1, virtual_params, virtual_result, 0, 0.25, true);
+  const std::vector<std::string> virtual_lines = split_lines(virtual_circuit);
+  if (count_prefix(virtual_lines, "E(") == 0 || count_prefix(virtual_lines, "ELSE_CORRELATED_ERROR(") == 0) {
+    throw std::runtime_error(
+        "Virtual decoder translation must preserve correlated/else-correlated instructions");
+  }
+  // No CHECK_ERROR flag for the round means no virtual spread injection in that round.
+  LoweringResult no_check_result;
+  no_check_result.qec_rounds = 1;
+  no_check_result.check_error_round_flags = {{0}};
+  no_check_result.erasure_round_flags = {{0}};
+  const std::string no_check_virtual =
+      build_virtual_decoder_stim_circuit(code, 1, virtual_params, no_check_result, 0, 0.25, true);
+  const std::vector<std::string> no_check_lines = split_lines(no_check_virtual);
+  if (count_prefix(no_check_lines, "E(") != 0 || count_prefix(no_check_lines, "ELSE_CORRELATED_ERROR(") != 0 ||
+      count_prefix(no_check_lines, "X_ERROR(") != 0) {
+    throw std::runtime_error(
+        "Virtual decoder translation must not inject errors in rounds without CHECK_ERROR evidence");
+  }
+
   return 0;
 }
