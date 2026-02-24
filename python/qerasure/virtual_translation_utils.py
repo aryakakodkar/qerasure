@@ -12,18 +12,6 @@ if TYPE_CHECKING:
     import stim
 
 
-def _build_stim_circuit_from_text(circuit_text: str) -> "stim.Circuit":
-    """Parse a Stim-format circuit string into a `stim.Circuit` object."""
-    try:
-        import stim
-    except ModuleNotFoundError as exc:
-        raise ModuleNotFoundError(
-            "The Python `stim` package is required for circuit-object builders. "
-            "Install/import `stim` to use this function."
-        ) from exc
-    return stim.Circuit(circuit_text)
-
-
 def build_virtual_decoder_stim_circuit(
     code: RotatedSurfaceCode,
     qec_rounds: int,
@@ -59,16 +47,23 @@ def build_virtual_decoder_stim_circuit_object(
     condition_on_erasure_in_round: bool = True,
 ) -> "stim.Circuit":
     """Generate a `stim.Circuit` virtual decoder circuit."""
-    return _build_stim_circuit_from_text(
-        build_virtual_decoder_stim_circuit(
-            code=code,
-            qec_rounds=qec_rounds,
-            lowering_params=lowering_params,
-            lowering_result=lowering_result,
-            shot_index=shot_index,
-            two_qubit_erasure_probability=two_qubit_erasure_probability,
-            condition_on_erasure_in_round=condition_on_erasure_in_round,
-        )
+    try:
+        import stim  # noqa: F401
+    except ModuleNotFoundError as exc:
+        raise ModuleNotFoundError(
+            "The Python `stim` package is required for circuit-object builders. "
+            "Install/import `stim` to use this function."
+        ) from exc
+    if isinstance(lowering_params, SpreadProgram):
+        lowering_params = LoweringParams(lowering_params)
+    return cpp.build_virtual_decoder_stim_circuit_object(
+        code._to_cpp_code(),
+        int(qec_rounds),
+        lowering_params._to_cpp(),
+        getattr(lowering_result, "_cpp_result", lowering_result),
+        int(shot_index),
+        float(two_qubit_erasure_probability),
+        bool(condition_on_erasure_in_round),
     )
 
 
