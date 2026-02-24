@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from ._bindings import cpp
 from .code_utils import RotatedSurfaceCode
-from .lowering_utils import SpreadProgram
+from .lowering_utils import LoweringParams, LoweringResult, SpreadProgram
 
 if TYPE_CHECKING:
     import stim
@@ -27,16 +27,22 @@ def _build_stim_circuit_from_text(circuit_text: str) -> "stim.Circuit":
 def build_virtual_decoder_stim_circuit(
     code: RotatedSurfaceCode,
     qec_rounds: int,
-    spread_program: SpreadProgram,
+    lowering_params: LoweringParams | SpreadProgram,
+    lowering_result: LoweringResult,
     two_qubit_erasure_probability: float,
+    shot_index: int = 0,
     condition_on_erasure_in_round: bool = True,
 ) -> str:
     """Generate a virtual decoder circuit string with probabilistic spread injection."""
+    if isinstance(lowering_params, SpreadProgram):
+        lowering_params = LoweringParams(lowering_params)
     return str(
         cpp.build_virtual_decoder_stim_circuit(
             code._to_cpp_code(),
             int(qec_rounds),
-            spread_program._to_cpp(),
+            lowering_params._to_cpp(),
+            getattr(lowering_result, "_cpp_result", lowering_result),
+            int(shot_index),
             float(two_qubit_erasure_probability),
             bool(condition_on_erasure_in_round),
         )
@@ -46,8 +52,10 @@ def build_virtual_decoder_stim_circuit(
 def build_virtual_decoder_stim_circuit_object(
     code: RotatedSurfaceCode,
     qec_rounds: int,
-    spread_program: SpreadProgram,
+    lowering_params: LoweringParams | SpreadProgram,
+    lowering_result: LoweringResult,
     two_qubit_erasure_probability: float,
+    shot_index: int = 0,
     condition_on_erasure_in_round: bool = True,
 ) -> "stim.Circuit":
     """Generate a `stim.Circuit` virtual decoder circuit."""
@@ -55,7 +63,9 @@ def build_virtual_decoder_stim_circuit_object(
         build_virtual_decoder_stim_circuit(
             code=code,
             qec_rounds=qec_rounds,
-            spread_program=spread_program,
+            lowering_params=lowering_params,
+            lowering_result=lowering_result,
+            shot_index=shot_index,
             two_qubit_erasure_probability=two_qubit_erasure_probability,
             condition_on_erasure_in_round=condition_on_erasure_in_round,
         )
@@ -66,8 +76,10 @@ def build_virtual_decoder_stim_circuit_object(
 def build_virtual_logical_stabilizer_circuit(
     code: RotatedSurfaceCode,
     qec_rounds: int,
-    spread_program: SpreadProgram,
+    lowering_params: LoweringParams | SpreadProgram,
+    lowering_result: LoweringResult,
     p_two_qubit_erasure: float,
+    shot_index: int = 0,
     *,
     condition_on_erasure_in_round: bool = True,
 ) -> str:
@@ -75,7 +87,9 @@ def build_virtual_logical_stabilizer_circuit(
     return build_virtual_decoder_stim_circuit(
         code=code,
         qec_rounds=qec_rounds,
-        spread_program=spread_program,
+        lowering_params=lowering_params,
+        lowering_result=lowering_result,
+        shot_index=shot_index,
         two_qubit_erasure_probability=p_two_qubit_erasure,
         condition_on_erasure_in_round=condition_on_erasure_in_round,
     )
@@ -84,8 +98,10 @@ def build_virtual_logical_stabilizer_circuit(
 def build_virtual_logical_stabilizer_circuit_object(
     code: RotatedSurfaceCode,
     qec_rounds: int,
-    spread_program: SpreadProgram,
+    lowering_params: LoweringParams | SpreadProgram,
+    lowering_result: LoweringResult,
     p_two_qubit_erasure: float,
+    shot_index: int = 0,
     *,
     condition_on_erasure_in_round: bool = True,
 ) -> "stim.Circuit":
@@ -93,7 +109,9 @@ def build_virtual_logical_stabilizer_circuit_object(
     return build_virtual_decoder_stim_circuit_object(
         code=code,
         qec_rounds=qec_rounds,
-        spread_program=spread_program,
+        lowering_params=lowering_params,
+        lowering_result=lowering_result,
+        shot_index=shot_index,
         two_qubit_erasure_probability=p_two_qubit_erasure,
         condition_on_erasure_in_round=condition_on_erasure_in_round,
     )

@@ -2,8 +2,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <utility>
+#include <string>
 #include <vector>
 
 #include "qerasure/core/code/rotated_surface_code.h"
@@ -41,6 +41,14 @@ struct LoweringResult {
 
   std::vector<std::vector<LoweredErrorEvent>> sparse_cliffords;
   std::vector<std::vector<std::size_t>> clifford_timestep_offsets;
+  // For each shot and each round, true if CHECK_ERROR at end of that round
+  // indicated the round contained at least one unresolved erasure.
+  std::vector<std::vector<std::uint8_t>> check_error_round_flags;
+  // For each shot and each round, true if the round had erasure evidence:
+  // either a successful RESET or a CHECK_ERROR at its end boundary.
+  std::vector<std::vector<std::uint8_t>> erasure_round_flags;
+  // Per shot reset evidence as (round_index, qubit_idx) tuples.
+  std::vector<std::vector<std::pair<std::size_t, std::size_t>>> reset_round_qubits;
 };
 
 // Data-qubit partner ancilla slots used by Stim-like lowering instructions.

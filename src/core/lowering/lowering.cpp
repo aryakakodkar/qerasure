@@ -447,6 +447,9 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
   result.qec_rounds = sim_result.qec_rounds;
   result.sparse_cliffords.resize(sim_result.sparse_erasures.size());
   result.clifford_timestep_offsets.resize(sim_result.erasure_timestep_offsets.size());
+  result.check_error_round_flags.resize(sim_result.sparse_erasures.size());
+  result.erasure_round_flags.resize(sim_result.sparse_erasures.size());
+  result.reset_round_qubits.resize(sim_result.sparse_erasures.size());
 
   const std::size_t num_qubits = code_.num_qubits();
   const std::size_t num_data_qubits = code_.x_anc_offset();
@@ -466,6 +469,12 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
     const auto& offsets = sim_result.erasure_timestep_offsets[shot];
     auto& lowered_events = result.sparse_cliffords[shot];
     auto& lowered_offsets = result.clifford_timestep_offsets[shot];
+    auto& check_flags = result.check_error_round_flags[shot];
+    auto& erasure_flags = result.erasure_round_flags[shot];
+    auto& reset_round_qubits = result.reset_round_qubits[shot];
+    check_flags.assign(result.qec_rounds, 0);
+    erasure_flags.assign(result.qec_rounds, 0);
+    reset_round_qubits.clear();
     lowered_offsets.assign(offsets.size(), 0);
     lowered_events.clear();
     lowered_events.reserve(events.size() + events.size() / 2 + 8);
@@ -487,6 +496,13 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
             erased_qubits.push_back(qubit_idx);
           }
         } else if (event_type == EventType::RESET) {
+          if (t > 0 && (t % 4) == 0) {
+            const std::size_t prior_round = t / 4 - 1;
+            if (prior_round < erasure_flags.size()) {
+              erasure_flags[prior_round] = 1;
+              reset_round_qubits.push_back({prior_round, qubit_idx});
+            }
+          }
           if (erased_state[qubit_idx] != 0) {
             erased_state[qubit_idx] = 0;
             const std::size_t pos = erased_pos[qubit_idx];
@@ -501,6 +517,15 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
             lowered_events.push_back(
                 {qubit_idx, params_.reset_params_.error_type, LoweredEventOrigin::RESET});
             ++num_lowering_events;
+          }
+        } else if (event_type == EventType::CHECK_ERROR) {
+          // CHECK_ERROR at timestep (r+1)*4 implies erasure occurred in round r.
+          if (t > 0 && (t % 4) == 0) {
+            const std::size_t prior_round = t / 4 - 1;
+            if (prior_round < check_flags.size()) {
+              check_flags[prior_round] = 1;
+              erasure_flags[prior_round] = 1;
+            }
           }
         }
       }

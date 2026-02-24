@@ -252,6 +252,9 @@ class LoweringResult:
     qec_rounds: int
     sparse_cliffords: list
     clifford_timestep_offsets: list
+    check_error_round_flags: list
+    erasure_round_flags: list
+    reset_round_qubits: list
     _cpp_result: object | None = None
 
     @classmethod
@@ -260,6 +263,9 @@ class LoweringResult:
             qec_rounds=int(getattr(cpp_result, "qec_rounds", 0)),
             sparse_cliffords=cpp_result.sparse_cliffords,
             clifford_timestep_offsets=cpp_result.clifford_timestep_offsets,
+            check_error_round_flags=getattr(cpp_result, "check_error_round_flags", []),
+            erasure_round_flags=getattr(cpp_result, "erasure_round_flags", []),
+            reset_round_qubits=getattr(cpp_result, "reset_round_qubits", []),
             _cpp_result=cpp_result,
         )
 

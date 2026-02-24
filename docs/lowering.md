@@ -5,7 +5,13 @@
 
 ## Instruction Model
 
-Lowering is defined by a `SpreadProgram`, which is an ordered list of instructions defined for each data qubit. A `SpreadProgram` can be provided with an instruction in the following form:
+Lowering is defined by a `LoweringParams` object. This contains:
+1. A `SpreadProgram` 
+2. A reset error
+
+The reset error defines the type of Pauli error on the qubit upon reset.
+
+A `SpreadProgram` is an ordered list of instructions defined for each data qubit. A `SpreadProgram` can be provided with an instruction in the following form:
 
 ```
 SpreadProgram program;

@@ -102,8 +102,8 @@ CircuitBuildContext build_context(const RotatedSurfaceCode& code) {
 
   const auto& coords = code.index_to_coord();
   for (const std::size_t q : data_qubits) {
-    if (coords[q].first == 1) {
-      ctx.logical_x_data_qubits.push_back(q);
+    if (coords[q].second == 1) {
+      ctx.logical_x_data_qubits.push_back(q); // TODO_ARYA: incorrectly named
     }
   }
 

@@ -10,6 +10,7 @@ struct Circuit;
 }
 
 namespace qerasure {
+struct LoweringParams;
 struct LoweringResult;
 struct SpreadProgram;
 
@@ -46,10 +47,12 @@ std::string build_logically_equivalent_erasure_stim_circuit(
 // `condition_on_erasure_in_round` controls whether first-erasure timestep probabilities are
 // normalized conditioned on "an erasure occurred within the round".
 stim::Circuit build_virtual_decoder_stim_circuit_object(
-    const RotatedSurfaceCode& code, std::size_t qec_rounds, const SpreadProgram& spread_program,
+    const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
+    const LoweringResult& lowering_result, std::size_t shot_index,
     double two_qubit_erasure_probability, bool condition_on_erasure_in_round = true);
 std::string build_virtual_decoder_stim_circuit(
-    const RotatedSurfaceCode& code, std::size_t qec_rounds, const SpreadProgram& spread_program,
+    const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
+    const LoweringResult& lowering_result, std::size_t shot_index,
     double two_qubit_erasure_probability, bool condition_on_erasure_in_round = true);
 
 }  // namespace qerasure

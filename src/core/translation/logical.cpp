@@ -161,4 +161,14 @@ std::string build_logical_stabilizer_circuit(
   return build_logical_stabilizer_circuit_object(code, lowering_result, shot_index).str();
 }
 
+stim::Circuit build_logically_equivalent_erasure_stim_circuit_object(
+    const RotatedSurfaceCode& code, const LoweringResult& lowering_result, std::size_t shot_index) {
+  return build_logical_stabilizer_circuit_object(code, lowering_result, shot_index);
+}
+
+std::string build_logically_equivalent_erasure_stim_circuit(
+    const RotatedSurfaceCode& code, const LoweringResult& lowering_result, std::size_t shot_index) {
+  return build_logical_stabilizer_circuit(code, lowering_result, shot_index);
+}
+
 }  // namespace qerasure

@@ -282,7 +282,10 @@ PYBIND11_MODULE(qerasure_python, m) {
   py::class_<qerasure::LoweringResult>(m, "LoweringResult")
       .def_readonly("qec_rounds", &qerasure::LoweringResult::qec_rounds)
       .def_readonly("sparse_cliffords", &qerasure::LoweringResult::sparse_cliffords)
-      .def_readonly("clifford_timestep_offsets", &qerasure::LoweringResult::clifford_timestep_offsets);
+      .def_readonly("clifford_timestep_offsets", &qerasure::LoweringResult::clifford_timestep_offsets)
+      .def_readonly("check_error_round_flags", &qerasure::LoweringResult::check_error_round_flags)
+      .def_readonly("erasure_round_flags", &qerasure::LoweringResult::erasure_round_flags)
+      .def_readonly("reset_round_qubits", &qerasure::LoweringResult::reset_round_qubits);
 
   py::class_<qerasure::Lowerer>(m, "Lowerer")
       .def(py::init<const qerasure::RotatedSurfaceCode&, const qerasure::LoweringParams&>(),
@@ -303,7 +306,8 @@ PYBIND11_MODULE(qerasure_python, m) {
         py::arg("lowering_result"), py::arg("shot_index") = 0,
         "Generate a Stim-format circuit with deterministic lowered-erasure errors injected by timestep.");
   m.def("build_virtual_decoder_stim_circuit", &qerasure::build_virtual_decoder_stim_circuit,
-        py::arg("code"), py::arg("qec_rounds"), py::arg("spread_program"),
+        py::arg("code"), py::arg("qec_rounds"), py::arg("lowering_params"),
+        py::arg("lowering_result"), py::arg("shot_index") = 0,
         py::arg("two_qubit_erasure_probability"),
         py::arg("condition_on_erasure_in_round") = true,
         "Generate a Stim-format virtual decoder circuit with probabilistic spread injection.");
