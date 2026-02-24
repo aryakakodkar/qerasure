@@ -163,5 +163,22 @@ int main() {
     throw std::runtime_error("Spread-origin lowering errors must be injected after the corresponding CX step");
   }
 
+  // Virtual decoder circuit: correlated-flag carry-over must suppress ELSE instructions even when
+  // the correlated instruction has no emitted target error.
+  SpreadProgram virtual_program;
+  virtual_program.add_correlated_error(1.0, {{PauliError::NO_ERROR, PartnerSlot::X_2}});
+  virtual_program.add_else_correlated_error(1.0, {{PauliError::X_ERROR, PartnerSlot::X_1}});
+  const std::string virtual_circuit =
+      build_virtual_decoder_stim_circuit(code, 1, virtual_program, 0.25, true);
+  const std::vector<std::string> virtual_lines = split_lines(virtual_circuit);
+  if (count_prefix(virtual_lines, "E(") == 0 || count_prefix(virtual_lines, "ELSE_CORRELATED_ERROR(") == 0) {
+    throw std::runtime_error(
+        "Virtual decoder translation must preserve correlated/else-correlated instructions");
+  }
+  if (count_prefix(virtual_lines, "X_ERROR(") != 0) {
+    throw std::runtime_error(
+        "ELSE_CORRELATED_ERROR should be suppressed when correlated branch fires with probability 1");
+  }
+
   return 0;
 }

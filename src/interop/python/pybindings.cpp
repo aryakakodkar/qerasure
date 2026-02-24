@@ -92,6 +92,10 @@ PYBIND11_MODULE(qerasure_python, m) {
       .def_property_readonly("coord_to_index", &coord_to_index_to_python)
       .def_property_readonly("index_to_coord", &index_to_coord_to_python)
       .def_property_readonly("partner_map", &qerasure::RotatedSurfaceCode::partner_map)
+      .def_property_readonly("data_to_x_ancilla_slots",
+                             &qerasure::RotatedSurfaceCode::data_to_x_ancilla_slots)
+      .def_property_readonly("data_to_z_ancilla_slots",
+                             &qerasure::RotatedSurfaceCode::data_to_z_ancilla_slots)
       .def_property_readonly("x_anc_offset", &qerasure::RotatedSurfaceCode::x_anc_offset)
       .def_property_readonly("z_anc_offset", &qerasure::RotatedSurfaceCode::z_anc_offset)
       .def_property_readonly("gates_per_step", &qerasure::RotatedSurfaceCode::gates_per_step);
@@ -180,6 +184,19 @@ PYBIND11_MODULE(qerasure_python, m) {
       .value("Z_2", qerasure::PartnerSlot::Z_2)
       .export_values();
 
+  py::enum_<qerasure::SpreadInstructionType>(m, "SpreadInstructionType")
+      .value("X_ERROR", qerasure::SpreadInstructionType::X_ERROR)
+      .value("Y_ERROR", qerasure::SpreadInstructionType::Y_ERROR)
+      .value("Z_ERROR", qerasure::SpreadInstructionType::Z_ERROR)
+      .value("DEPOLARIZE1", qerasure::SpreadInstructionType::DEPOLARIZE1)
+      .value("COND_X_ERROR", qerasure::SpreadInstructionType::COND_X_ERROR)
+      .value("COND_Y_ERROR", qerasure::SpreadInstructionType::COND_Y_ERROR)
+      .value("COND_Z_ERROR", qerasure::SpreadInstructionType::COND_Z_ERROR)
+      .value("ELSE_X_ERROR", qerasure::SpreadInstructionType::ELSE_X_ERROR)
+      .value("ELSE_Y_ERROR", qerasure::SpreadInstructionType::ELSE_Y_ERROR)
+      .value("ELSE_Z_ERROR", qerasure::SpreadInstructionType::ELSE_Z_ERROR)
+      .export_values();
+
   py::class_<qerasure::SpreadTargetOp>(m, "SpreadTargetOp")
       .def(py::init<>())
       .def(py::init<qerasure::PauliError, qerasure::PartnerSlot>(), py::arg("error_type"),
@@ -187,8 +204,39 @@ PYBIND11_MODULE(qerasure_python, m) {
       .def_readwrite("error_type", &qerasure::SpreadTargetOp::error_type)
       .def_readwrite("slot", &qerasure::SpreadTargetOp::slot);
 
+  py::class_<qerasure::SpreadInstruction>(m, "SpreadInstruction")
+      .def(py::init<>())
+      .def_readonly("type", &qerasure::SpreadInstruction::type)
+      .def_readonly("probability", &qerasure::SpreadInstruction::probability)
+      .def_readonly("target_slot", &qerasure::SpreadInstruction::target_slot);
+
   py::class_<qerasure::SpreadProgram>(m, "SpreadProgram")
       .def(py::init<>())
+      .def("append", &qerasure::SpreadProgram::append, py::arg("stim_like_program"))
+      .def("add_instruction",
+           py::overload_cast<qerasure::SpreadInstructionType, double, qerasure::PartnerSlot>(
+               &qerasure::SpreadProgram::add_instruction),
+           py::arg("type"), py::arg("probability"), py::arg("target"))
+      .def("add_x_error", &qerasure::SpreadProgram::add_x_error, py::arg("probability"),
+           py::arg("target"))
+      .def("add_y_error", &qerasure::SpreadProgram::add_y_error, py::arg("probability"),
+           py::arg("target"))
+      .def("add_z_error", &qerasure::SpreadProgram::add_z_error, py::arg("probability"),
+           py::arg("target"))
+      .def("add_depolarize1", &qerasure::SpreadProgram::add_depolarize1, py::arg("probability"),
+           py::arg("target"))
+      .def("add_cond_x_error", &qerasure::SpreadProgram::add_cond_x_error, py::arg("probability"),
+           py::arg("target"))
+      .def("add_cond_y_error", &qerasure::SpreadProgram::add_cond_y_error, py::arg("probability"),
+           py::arg("target"))
+      .def("add_cond_z_error", &qerasure::SpreadProgram::add_cond_z_error, py::arg("probability"),
+           py::arg("target"))
+      .def("add_else_x_error", &qerasure::SpreadProgram::add_else_x_error, py::arg("probability"),
+           py::arg("target"))
+      .def("add_else_y_error", &qerasure::SpreadProgram::add_else_y_error, py::arg("probability"),
+           py::arg("target"))
+      .def("add_else_z_error", &qerasure::SpreadProgram::add_else_z_error, py::arg("probability"),
+           py::arg("target"))
       .def("add_error_channel", &qerasure::SpreadProgram::add_error_channel, py::arg("probability"),
            py::arg("targets"))
       .def("add_correlated_error", &qerasure::SpreadProgram::add_correlated_error,
@@ -254,4 +302,9 @@ PYBIND11_MODULE(qerasure_python, m) {
         &qerasure::build_logically_equivalent_erasure_stim_circuit, py::arg("code"),
         py::arg("lowering_result"), py::arg("shot_index") = 0,
         "Generate a Stim-format circuit with deterministic lowered-erasure errors injected by timestep.");
+  m.def("build_virtual_decoder_stim_circuit", &qerasure::build_virtual_decoder_stim_circuit,
+        py::arg("code"), py::arg("qec_rounds"), py::arg("spread_program"),
+        py::arg("two_qubit_erasure_probability"),
+        py::arg("condition_on_erasure_in_round") = true,
+        "Generate a Stim-format virtual decoder circuit with probabilistic spread injection.");
 }

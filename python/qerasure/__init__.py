@@ -10,6 +10,8 @@ from .lowering_utils import (
     PauliError,
     PartnerSlot,
     SpreadProgram,
+    SpreadInstruction,
+    SpreadInstructionType,
     SpreadTargetOp,
     visualize_lowering,
 )
@@ -24,9 +26,17 @@ from .sim_utils import (
 )
 from .translation_utils import (
     build_logical_stabilizer_circuit,
+    build_logical_stabilizer_circuit_object,
     build_logically_equivalent_erasure_stim_circuit,
+    build_logically_equivalent_erasure_stim_circuit_object,
     build_surf_stabilizer_circuit,
     build_surface_code_stim_circuit,
+)
+from .virtual_translation_utils import (
+    build_virtual_decoder_stim_circuit,
+    build_virtual_decoder_stim_circuit_object,
+    build_virtual_logical_stabilizer_circuit,
+    build_virtual_logical_stabilizer_circuit_object,
 )
 
 __all__ = [
@@ -41,8 +51,10 @@ __all__ = [
     "ErasureSimulator",
     "PauliError",
     "PartnerSlot",
+    "SpreadInstructionType",
     "SpreadTargetOp",
     "SpreadProgram",
+    "SpreadInstruction",
     "LoweredErrorParams",
     "LoweredEventOrigin",
     "LoweringParams",
@@ -51,7 +63,13 @@ __all__ = [
     "build_surf_stabilizer_circuit",
     "build_surface_code_stim_circuit",
     "build_logical_stabilizer_circuit",
+    "build_logical_stabilizer_circuit_object",
     "build_logically_equivalent_erasure_stim_circuit",
+    "build_logically_equivalent_erasure_stim_circuit_object",
+    "build_virtual_decoder_stim_circuit",
+    "build_virtual_decoder_stim_circuit_object",
+    "build_virtual_logical_stabilizer_circuit",
+    "build_virtual_logical_stabilizer_circuit_object",
     "visualize_erasures",
     "visualize_lowering",
 ]

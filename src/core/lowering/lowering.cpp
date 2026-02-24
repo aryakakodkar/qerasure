@@ -1,6 +1,9 @@
 #include "qerasure/core/lowering/lowering.h"
 
+#include <algorithm>
+#include <cctype>
 #include <limits>
+#include <sstream>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -11,37 +14,296 @@ namespace qerasure {
 
 namespace {
 
+double clamp_probability(double p) {
+  if (p <= 0.0) {
+    return 0.0;
+  }
+  if (p >= 1.0) {
+    return 1.0;
+  }
+  return p;
+}
+
+bool is_cond_type(SpreadInstructionType type) {
+  return type == SpreadInstructionType::COND_X_ERROR || type == SpreadInstructionType::COND_Y_ERROR ||
+         type == SpreadInstructionType::COND_Z_ERROR;
+}
+
+bool is_else_type(SpreadInstructionType type) {
+  return type == SpreadInstructionType::ELSE_X_ERROR || type == SpreadInstructionType::ELSE_Y_ERROR ||
+         type == SpreadInstructionType::ELSE_Z_ERROR;
+}
+
+PauliError pauli_from_instruction_type(SpreadInstructionType type) {
+  switch (type) {
+    case SpreadInstructionType::X_ERROR:
+    case SpreadInstructionType::COND_X_ERROR:
+    case SpreadInstructionType::ELSE_X_ERROR:
+      return PauliError::X_ERROR;
+    case SpreadInstructionType::Y_ERROR:
+    case SpreadInstructionType::COND_Y_ERROR:
+    case SpreadInstructionType::ELSE_Y_ERROR:
+      return PauliError::Y_ERROR;
+    case SpreadInstructionType::Z_ERROR:
+    case SpreadInstructionType::COND_Z_ERROR:
+    case SpreadInstructionType::ELSE_Z_ERROR:
+      return PauliError::Z_ERROR;
+    case SpreadInstructionType::DEPOLARIZE1:
+      return PauliError::DEPOLARIZE;
+  }
+  throw std::invalid_argument("Unsupported spread instruction type");
+}
+
+// Can't see where this might be useful
+SpreadInstructionType simple_type_from_pauli(PauliError error_type) {
+  switch (error_type) {
+    case PauliError::X_ERROR:
+      return SpreadInstructionType::X_ERROR;
+    case PauliError::Y_ERROR:
+      return SpreadInstructionType::Y_ERROR;
+    case PauliError::Z_ERROR:
+      return SpreadInstructionType::Z_ERROR;
+    case PauliError::DEPOLARIZE:
+      return SpreadInstructionType::DEPOLARIZE1;
+    case PauliError::NO_ERROR:
+      break;
+  }
+  throw std::invalid_argument("Cannot map NO_ERROR to a simple spread instruction");
+}
+
+std::string trim(std::string s) {
+  auto not_space = [](unsigned char c) { return !std::isspace(c); };
+  s.erase(s.begin(), std::find_if(s.begin(), s.end(), not_space));
+  s.erase(std::find_if(s.rbegin(), s.rend(), not_space).base(), s.end());
+  return s;
+}
+
+// TODO_ARYA: Needs to be extended to support higher-weight checks in other qLDPC codes
+PartnerSlot parse_partner_slot(const std::string& slot_text) {
+  if (slot_text == "X_1") {
+    return PartnerSlot::X_1;
+  }
+  if (slot_text == "X_2") {
+    return PartnerSlot::X_2;
+  }
+  if (slot_text == "Z_1") {
+    return PartnerSlot::Z_1;
+  }
+  if (slot_text == "Z_2") {
+    return PartnerSlot::Z_2;
+  }
+  throw std::invalid_argument("Unknown partner slot token: " + slot_text);
+}
+
+SpreadInstructionType parse_instruction_name(const std::string& name) {
+  if (name == "X_ERROR") {
+    return SpreadInstructionType::X_ERROR;
+  }
+  if (name == "Y_ERROR") {
+    return SpreadInstructionType::Y_ERROR;
+  }
+  if (name == "Z_ERROR") {
+    return SpreadInstructionType::Z_ERROR;
+  }
+  if (name == "DEPOLARIZE1") { 
+    return SpreadInstructionType::DEPOLARIZE1;
+  }
+  if (name == "COND_X_ERROR") {
+    return SpreadInstructionType::COND_X_ERROR;
+  }
+  if (name == "COND_Y_ERROR") {
+    return SpreadInstructionType::COND_Y_ERROR;
+  }
+  if (name == "COND_Z_ERROR") {
+    return SpreadInstructionType::COND_Z_ERROR;
+  }
+  if (name == "ELSE_X_ERROR") {
+    return SpreadInstructionType::ELSE_X_ERROR;
+  }
+  if (name == "ELSE_Y_ERROR") {
+    return SpreadInstructionType::ELSE_Y_ERROR;
+  }
+  if (name == "ELSE_Z_ERROR") {
+    return SpreadInstructionType::ELSE_Z_ERROR;
+  }
+  throw std::invalid_argument("Unknown spread instruction name: " + name);
+}
+
+// Takes a string-like spread instruction and turns it into a SpreadInstruction struct
+SpreadInstruction parse_spread_instruction_str(const std::string& instruction_text) {
+  const std::string text = trim(instruction_text);
+  if (text.empty()) {
+    throw std::invalid_argument("Empty spread instruction");
+  }
+  const std::size_t lparen = text.find('(');
+  const std::size_t rparen = text.find(')');
+  if (lparen == std::string::npos || rparen == std::string::npos || rparen <= lparen) {
+    throw std::invalid_argument("Instruction must contain '(p)' argument: " + text);
+  }
+  const std::string op_name = trim(text.substr(0, lparen));
+  const SpreadInstructionType type = parse_instruction_name(op_name);
+  const double p = clamp_probability(std::stod(trim(text.substr(lparen + 1, rparen - lparen - 1))));
+
+  SpreadInstruction instruction;
+  instruction.type = type;
+  instruction.probability = p;
+  std::istringstream slot_stream(trim(text.substr(rparen + 1)));
+  std::string slot_token;
+  if (!(slot_stream >> slot_token)) {
+    throw std::invalid_argument("Spread instruction must specify a target slot: " + text);
+  }
+  instruction.target_slot = parse_partner_slot(slot_token);
+  if (slot_stream >> slot_token) {
+    throw std::invalid_argument(
+        "Each spread instruction must have at most one target. Use ';' to separate instructions.");
+  }
+  return instruction;
+}
+
 // Build a default instruction program from legacy pair-based params.
 // This preserves old construction paths while routing execution through one instruction model.
 SpreadProgram make_legacy_program(const std::pair<LoweredErrorParams, LoweredErrorParams>& x_params,
                                   const std::pair<LoweredErrorParams, LoweredErrorParams>& z_params) {
   SpreadProgram program;
-  program.add_error_channel(
-      x_params.first.probability, {{x_params.first.error_type, PartnerSlot::X_1}});
-  program.add_error_channel(
-      x_params.second.probability, {{x_params.second.error_type, PartnerSlot::X_2}});
-  program.add_error_channel(
-      z_params.first.probability, {{z_params.first.error_type, PartnerSlot::Z_1}});
-  program.add_error_channel(
-      z_params.second.probability, {{z_params.second.error_type, PartnerSlot::Z_2}});
+  if (x_params.first.error_type != PauliError::NO_ERROR) {
+    program.add_instruction(simple_type_from_pauli(x_params.first.error_type), x_params.first.probability,
+                            PartnerSlot::X_1);
+  }
+  if (x_params.second.error_type != PauliError::NO_ERROR) {
+    program.add_instruction(simple_type_from_pauli(x_params.second.error_type), x_params.second.probability,
+                            PartnerSlot::X_2);
+  }
+  if (z_params.first.error_type != PauliError::NO_ERROR) {
+    program.add_instruction(simple_type_from_pauli(z_params.first.error_type), z_params.first.probability,
+                            PartnerSlot::Z_1);
+  }
+  if (z_params.second.error_type != PauliError::NO_ERROR) {
+    program.add_instruction(simple_type_from_pauli(z_params.second.error_type), z_params.second.probability,
+                            PartnerSlot::Z_2);
+  }
   return program;
 }
 
 }  // namespace
 
-// Program-building helpers keep the public API concise and avoid manual instruction struct wiring.
+// Allow for addition of instructions in a string-like manner, similar to Stim
+void SpreadProgram::append(const std::string& instruction_strs) {
+  std::size_t start = 0;
+  while (start <= instruction_strs.size()) {
+    std::size_t end = instruction_strs.find(';', start);
+    if (end == std::string::npos) {
+      end = instruction_strs.size();
+    }
+    const std::string piece = trim(instruction_strs.substr(start, end - start));
+    if (!piece.empty()) {
+      instructions.push_back(parse_spread_instruction_str(piece));
+    }
+    if (end == instruction_strs.size()) {
+      break;
+    }
+    start = end + 1;
+  }
+}
+
+void SpreadProgram::add_instruction(SpreadInstructionType type, double probability, PartnerSlot target) {
+  SpreadInstruction instruction;
+  instruction.type = type;
+  instruction.probability = clamp_probability(probability);
+  instruction.target_slot = target;
+  instructions.push_back(instruction);
+}
+
+// Strongly-type helpers, not good for scalability
+void SpreadProgram::add_x_error(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::X_ERROR, probability, target);
+}
+void SpreadProgram::add_y_error(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::Y_ERROR, probability, target);
+}
+void SpreadProgram::add_z_error(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::Z_ERROR, probability, target);
+}
+void SpreadProgram::add_depolarize1(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::DEPOLARIZE1, probability, target);
+}
+void SpreadProgram::add_cond_x_error(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::COND_X_ERROR, probability, target);
+}
+void SpreadProgram::add_cond_y_error(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::COND_Y_ERROR, probability, target);
+}
+void SpreadProgram::add_cond_z_error(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::COND_Z_ERROR, probability, target);
+}
+void SpreadProgram::add_else_x_error(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::ELSE_X_ERROR, probability, target);
+}
+void SpreadProgram::add_else_y_error(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::ELSE_Y_ERROR, probability, target);
+}
+void SpreadProgram::add_else_z_error(double probability, PartnerSlot target) {
+  add_instruction(SpreadInstructionType::ELSE_Z_ERROR, probability, target);
+}
+
+// Backward-compatible wrappers. Should not be used in new code.
 void SpreadProgram::add_error_channel(double probability, std::vector<SpreadTargetOp> targets) {
-  instructions.push_back({SpreadInstructionType::ERROR_CHANNEL, probability, std::move(targets)});
+  for (const SpreadTargetOp& target : targets) {
+    switch (target.error_type) {
+      case PauliError::X_ERROR:
+        add_instruction(SpreadInstructionType::X_ERROR, probability, target.slot);
+        break;
+      case PauliError::Y_ERROR:
+        add_instruction(SpreadInstructionType::Y_ERROR, probability, target.slot);
+        break;
+      case PauliError::Z_ERROR:
+        add_instruction(SpreadInstructionType::Z_ERROR, probability, target.slot);
+        break;
+      case PauliError::DEPOLARIZE:
+        add_instruction(SpreadInstructionType::DEPOLARIZE1, probability, target.slot);
+        break;
+      case PauliError::NO_ERROR:
+        break;
+    }
+  }
 }
 
 void SpreadProgram::add_correlated_error(double probability, std::vector<SpreadTargetOp> targets) {
-  instructions.push_back({SpreadInstructionType::CORRELATED_ERROR, probability, std::move(targets)});
+  for (const SpreadTargetOp& target : targets) {
+    switch (target.error_type) {
+      case PauliError::X_ERROR:
+        add_instruction(SpreadInstructionType::COND_X_ERROR, probability, target.slot);
+        break;
+      case PauliError::Y_ERROR:
+        add_instruction(SpreadInstructionType::COND_Y_ERROR, probability, target.slot);
+        break;
+      case PauliError::Z_ERROR:
+        add_instruction(SpreadInstructionType::COND_Z_ERROR, probability, target.slot);
+        break;
+      case PauliError::NO_ERROR:
+      case PauliError::DEPOLARIZE:
+        break;
+    }
+  }
 }
 
 void SpreadProgram::add_else_correlated_error(double probability,
                                               std::vector<SpreadTargetOp> targets) {
-  instructions.push_back(
-      {SpreadInstructionType::ELSE_CORRELATED_ERROR, probability, std::move(targets)});
+  for (const SpreadTargetOp& target : targets) {
+    switch (target.error_type) {
+      case PauliError::X_ERROR:
+        add_instruction(SpreadInstructionType::ELSE_X_ERROR, probability, target.slot);
+        break;
+      case PauliError::Y_ERROR:
+        add_instruction(SpreadInstructionType::ELSE_Y_ERROR, probability, target.slot);
+        break;
+      case PauliError::Z_ERROR:
+        add_instruction(SpreadInstructionType::ELSE_Z_ERROR, probability, target.slot);
+        break;
+      case PauliError::NO_ERROR:
+      case PauliError::DEPOLARIZE:
+        break;
+    }
+  }
 }
 
 // Legacy constructors map old x/z pair params into instruction programs.
@@ -117,11 +379,9 @@ void Lowerer::compile_programs() {
       CompiledInstruction compiled;
       compiled.type = instruction.type;
       compiled.threshold = probability_to_threshold(instruction.probability);
-      compiled.targets.reserve(instruction.targets.size());
-      for (const SpreadTargetOp& target : instruction.targets) {
-        compiled.targets.push_back(
-            {target.error_type, resolve_data_slot_qubit(data_idx, slot_to_index(target.slot))});
-      }
+      const PauliError instruction_error = pauli_from_instruction_type(instruction.type);
+      compiled.target =
+          {instruction_error, resolve_data_slot_qubit(data_idx, slot_to_index(instruction.target_slot))};
       out.instructions.push_back(std::move(compiled));
     }
     return out;
@@ -246,7 +506,7 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
       }
 
       if (t < offsets.size() - 2) {
-        // Stim-like lowering applies only for erased data qubits, since spread slots are data-relative.
+        // Lowering of erasures to Pauli errors applies only for erased data qubits (to be extended to ancillas in the future).
         // We execute the compiled instruction chain per erased data qubit.
         const std::size_t step = t % 4;
         const std::size_t step_base = step * num_qubits;
@@ -264,33 +524,40 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
             continue;
           }
 
-          bool correlated_flag = false;
+          bool conditional_flag = false;
           for (const CompiledInstruction& instruction : program.instructions) {
-            if (instruction.type == SpreadInstructionType::ELSE_CORRELATED_ERROR && correlated_flag) {
+            if (is_else_type(instruction.type) && conditional_flag) {
               continue;
             }
 
-            // CORRELATED_ERROR/ELSE_CORRELATED_ERROR share one local flag per chain execution.
+            // Instruction is all-or-nothing: all targets must be on the active partner.
+            bool feasible = !(instruction.target.qubit_idx == kNoPartner ||
+                              instruction.target.qubit_idx != current_partner);
+
+            if (!feasible) {
+              if (is_cond_type(instruction.type)) {
+                conditional_flag = false; // un-flag the conditional
+              }
+              continue;
+            }
+
             const bool fires = sample_with_threshold(instruction.threshold);
-            if (instruction.type == SpreadInstructionType::CORRELATED_ERROR ||
-                instruction.type == SpreadInstructionType::ELSE_CORRELATED_ERROR) {
-              correlated_flag = fires;
+            if (is_cond_type(instruction.type)) {
+              conditional_flag = fires;
+            } else if (is_else_type(instruction.type) && fires) {
+              conditional_flag = true;
             }
             if (!fires) {
               continue;
             }
 
-            for (const CompiledTargetOp& target : instruction.targets) {
-              if (target.error_type == PauliError::NO_ERROR || target.qubit_idx == kNoPartner) {
-                continue;
-              }
-              if (target.qubit_idx != current_partner) {
-                continue;
-              }
-              lowered_events.push_back(
-                  {target.qubit_idx, target.error_type, LoweredEventOrigin::SPREAD});
-              ++num_lowering_events;
+            const CompiledTargetOp& target = instruction.target;
+            if (target.error_type == PauliError::NO_ERROR || target.qubit_idx == kNoPartner ||
+                target.qubit_idx != current_partner) {
+              continue;
             }
+            lowered_events.push_back({target.qubit_idx, target.error_type, LoweredEventOrigin::SPREAD});
+            ++num_lowering_events;
           }
         }
       }

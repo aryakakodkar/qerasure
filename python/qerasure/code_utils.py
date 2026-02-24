@@ -7,6 +7,8 @@ from typing import Iterable
 
 from ._bindings import cpp
 
+_NO_PARTNER = (1 << 64) - 1
+
 
 @dataclass
 class RotatedSurfaceCode:
@@ -47,6 +49,67 @@ class RotatedSurfaceCode:
     @property
     def partner_map(self):
         return self._cpp_code.partner_map
+
+    @property
+    def data_to_x_ancilla_slots(self) -> list[tuple[int, int]]:
+        """Per-data-qubit X-slot ancilla indices as (X_1, X_2)."""
+        return [(int(a), int(b)) for a, b in self._cpp_code.data_to_x_ancilla_slots]
+
+    @property
+    def data_to_z_ancilla_slots(self) -> list[tuple[int, int]]:
+        """Per-data-qubit Z-slot ancilla indices as (Z_1, Z_2)."""
+        return [(int(a), int(b)) for a, b in self._cpp_code.data_to_z_ancilla_slots]
+
+    def _validate_data_qubit(self, data_qubit_idx: int) -> int:
+        n = int(data_qubit_idx)
+        if n < 0 or n >= self.x_anc_offset:
+            raise ValueError(f"data_qubit_idx must be in [0, {self.x_anc_offset - 1}]")
+        return n
+
+    @staticmethod
+    def _slot_value(slot: object) -> int:
+        value = int(slot)
+        if value < 0 or value > 3:
+            raise ValueError("slot must be one of PartnerSlot.X_1, X_2, Z_1, Z_2")
+        return value
+
+    def ancilla_for_data_slot(self, data_qubit_idx: int, slot: object) -> int:
+        """Return ancilla index for a data-qubit partner slot."""
+        data_idx = self._validate_data_qubit(data_qubit_idx)
+        slot_value = self._slot_value(slot)
+        if slot_value == 0:
+            ancilla = self.data_to_x_ancilla_slots[data_idx][0]
+        elif slot_value == 1:
+            ancilla = self.data_to_x_ancilla_slots[data_idx][1]
+        elif slot_value == 2:
+            ancilla = self.data_to_z_ancilla_slots[data_idx][0]
+        else:
+            ancilla = self.data_to_z_ancilla_slots[data_idx][1]
+        if ancilla == _NO_PARTNER:
+            raise ValueError(
+                f"Data qubit {data_idx} has no ancilla for slot value {slot_value}."
+            )
+        return ancilla
+
+    def interaction_timestep(self, qubit_idx: int, partner_idx: int) -> int:
+        """Return the schedule timestep (0..3) where two qubits interact."""
+        q = int(qubit_idx)
+        p = int(partner_idx)
+        if q < 0 or q >= self.num_qubits:
+            raise ValueError(f"qubit_idx must be in [0, {self.num_qubits - 1}]")
+        if p < 0 or p >= self.num_qubits:
+            raise ValueError(f"partner_idx must be in [0, {self.num_qubits - 1}]")
+        partner_map = self.partner_map
+        for step in range(4):
+            if int(partner_map[step * self.num_qubits + q]) == p:
+                return step
+        raise ValueError(f"Qubits {q} and {p} do not interact in the 4-step schedule.")
+
+    def timestep_for_data_slot(self, data_qubit_idx: int, slot: object) -> int:
+        """Return the timestep (0..3) where data qubit interacts with a slot ancilla."""
+        data_idx = self._validate_data_qubit(data_qubit_idx)
+        ancilla_idx = self.ancilla_for_data_slot(data_idx, slot)
+        return self.interaction_timestep(data_idx, ancilla_idx)
 
     def draw(self, annotate: bool = True, figsize: tuple[int, int] = (7, 7)):
         import matplotlib.pyplot as plt

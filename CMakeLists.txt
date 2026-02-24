@@ -53,6 +53,7 @@ add_library(qerasure
     src/core/sim/erasure_simulator.cpp
     src/core/lowering/lowering.cpp
     src/core/translation/stim_translation.cpp
+    src/core/translation/virtual_stim_translation.cpp
 )
 target_link_libraries(qerasure PRIVATE qerasure_stim)
 target_compile_features(qerasure PUBLIC cxx_std_20)

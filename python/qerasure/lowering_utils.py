@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import Optional, Sequence
 
 from ._bindings import cpp
@@ -11,6 +12,21 @@ from .sim_utils import ErasureSimParams, ErasureSimResult, _normalize_qubit_subs
 PauliError = cpp.PauliError
 LoweredEventOrigin = cpp.LoweredEventOrigin
 PartnerSlot = cpp.PartnerSlot
+try:
+    SpreadInstructionType = cpp.SpreadInstructionType
+except AttributeError:
+    # Backward compatibility when Python code is newer than compiled extension.
+    class SpreadInstructionType(IntEnum):
+        X_ERROR = 0
+        Y_ERROR = 1
+        Z_ERROR = 2
+        DEPOLARIZE1 = 3
+        COND_X_ERROR = 4
+        COND_Y_ERROR = 5
+        COND_Z_ERROR = 6
+        ELSE_X_ERROR = 7
+        ELSE_Y_ERROR = 8
+        ELSE_Z_ERROR = 9
 
 
 @dataclass
@@ -54,6 +70,27 @@ class SpreadTargetOp:
 
 
 @dataclass
+class SpreadInstruction:
+    """Python representation of one spread-program instruction."""
+
+    type: object
+    probability: float
+    target: SpreadTargetOp | None
+
+    @classmethod
+    def from_cpp(cls, cpp_instruction) -> "SpreadInstruction":
+        target = SpreadTargetOp(
+            error_type=PauliError.NO_ERROR,
+            slot=cpp_instruction.target_slot,
+        )
+        return cls(
+            type=cpp_instruction.type,
+            probability=float(cpp_instruction.probability),
+            target=target,
+        )
+
+
+@dataclass
 class SpreadProgram:
     """Stim-like lowering instruction program."""
 
@@ -62,6 +99,60 @@ class SpreadProgram:
     def __init__(self):
         self._cpp_program = cpp.SpreadProgram()
 
+    def append(self, stim_like_program: str) -> None:
+        """Append one or many semicolon-separated Stim-like instruction strings."""
+        self._cpp_program.append(str(stim_like_program))
+
+    @staticmethod
+    def _normalize_target(target: object | None) -> object | None:
+        if target is None:
+            raise ValueError("Each spread instruction must include exactly one target.")
+        if hasattr(target, "slot"):
+            return target.slot
+        if isinstance(target, (list, tuple)):
+            if len(target) > 1:
+                raise ValueError("Each spread instruction must have at most one target.")
+            if len(target) == 0:
+                raise ValueError("Each spread instruction must include exactly one target.")
+            first = target[0]
+            return first.slot if hasattr(first, "slot") else first
+        return target
+
+    def add_instruction(self, instruction_type: object, probability: float, target: object) -> None:
+        normalized_target = self._normalize_target(target)
+        self._cpp_program.add_instruction(instruction_type, float(probability), normalized_target)
+
+    def add_x_error(self, probability: float, target: object) -> None:
+        self._cpp_program.add_x_error(float(probability), self._normalize_target(target))
+
+    def add_y_error(self, probability: float, target: object) -> None:
+        self._cpp_program.add_y_error(float(probability), self._normalize_target(target))
+
+    def add_z_error(self, probability: float, target: object) -> None:
+        self._cpp_program.add_z_error(float(probability), self._normalize_target(target))
+
+    def add_depolarize1(self, probability: float, target: object) -> None:
+        self._cpp_program.add_depolarize1(float(probability), self._normalize_target(target))
+
+    def add_cond_x_error(self, probability: float, target: object) -> None:
+        self._cpp_program.add_cond_x_error(float(probability), self._normalize_target(target))
+
+    def add_cond_y_error(self, probability: float, target: object) -> None:
+        self._cpp_program.add_cond_y_error(float(probability), self._normalize_target(target))
+
+    def add_cond_z_error(self, probability: float, target: object) -> None:
+        self._cpp_program.add_cond_z_error(float(probability), self._normalize_target(target))
+
+    def add_else_x_error(self, probability: float, target: object) -> None:
+        self._cpp_program.add_else_x_error(float(probability), self._normalize_target(target))
+
+    def add_else_y_error(self, probability: float, target: object) -> None:
+        self._cpp_program.add_else_y_error(float(probability), self._normalize_target(target))
+
+    def add_else_z_error(self, probability: float, target: object) -> None:
+        self._cpp_program.add_else_z_error(float(probability), self._normalize_target(target))
+
+    # Backward-compatible helpers.
     def add_error_channel(self, probability: float, targets: list[SpreadTargetOp]) -> None:
         self._cpp_program.add_error_channel(float(probability), [t._to_cpp() for t in targets])
 
@@ -70,6 +161,11 @@ class SpreadProgram:
 
     def add_else_correlated_error(self, probability: float, targets: list[SpreadTargetOp]) -> None:
         self._cpp_program.add_else_correlated_error(float(probability), [t._to_cpp() for t in targets])
+
+    @property
+    def instructions(self) -> list[SpreadInstruction]:
+        """Return the program instructions with type, probability, and target operations."""
+        return [SpreadInstruction.from_cpp(inst) for inst in self._cpp_program.instructions]
 
     def _to_cpp(self):
         return self._cpp_program

@@ -14,6 +14,7 @@ namespace qerasure {
 
 namespace {
 
+// Holds precomputed data for efficient circuit construction later on.
 struct CircuitBuildContext {
   std::size_t num_qubits = 0;
   std::size_t num_data = 0;
@@ -193,7 +194,7 @@ void append_final_readout_detectors_and_observable(stim::Circuit* circuit, const
   circuit->safe_append_ua("OBSERVABLE_INCLUDE", logical_targets, 0.0);
 }
 
-// Hooks allows interleaving of pre-simulated errors
+// Hook lambdas allow interleaving of pre-simulated lowered errors
 template <typename PreStepHook, typename PostStepHook, typename PreMeasureHook>
 void append_extraction_round(stim::Circuit* circuit, const CircuitBuildContext& ctx,
                              std::size_t round_index, PreStepHook&& pre_step_hook,
@@ -302,14 +303,6 @@ std::string build_surf_stabilizer_circuit(const RotatedSurfaceCode& code, std::s
   return build_surf_stabilizer_circuit_object(code, qec_rounds).str();
 }
 
-stim::Circuit build_surface_code_stim_circuit_object(const RotatedSurfaceCode& code, std::size_t qec_rounds) {
-  return build_surf_stabilizer_circuit_object(code, qec_rounds);
-}
-
-std::string build_surface_code_stim_circuit(const RotatedSurfaceCode& code, std::size_t qec_rounds) {
-  return build_surf_stabilizer_circuit(code, qec_rounds);
-}
-
 // Builds a Stim circuit object for a surface code quantum memory with interleaved errors from 
 // results of a lowered erasure simulation. Resulting circuit is logically equivalent to erasure
 // circuit under specified lowering assumptions
@@ -347,7 +340,7 @@ stim::Circuit build_logical_stabilizer_circuit_object(
   z_error_targets.reserve(16);
   depolarize_targets.reserve(16);
 
-  auto pre_step_hook = [](std::size_t, std::size_t) {};
+  auto pre_step_hook = [](std::size_t, std::size_t) {}; // Currently no errors are injected before gates
 
   auto post_step_hook = [&](std::size_t round, std::size_t step) {
     const std::size_t timestep = round * 4 + step;
@@ -384,16 +377,6 @@ stim::Circuit build_logical_stabilizer_circuit_object(
 std::string build_logical_stabilizer_circuit(
     const RotatedSurfaceCode& code, const LoweringResult& lowering_result, std::size_t shot_index) {
   return build_logical_stabilizer_circuit_object(code, lowering_result, shot_index).str();
-}
-
-stim::Circuit build_logically_equivalent_erasure_stim_circuit_object(
-    const RotatedSurfaceCode& code, const LoweringResult& lowering_result, std::size_t shot_index) {
-  return build_logical_stabilizer_circuit_object(code, lowering_result, shot_index);
-}
-
-std::string build_logically_equivalent_erasure_stim_circuit(
-    const RotatedSurfaceCode& code, const LoweringResult& lowering_result, std::size_t shot_index) {
-  return build_logical_stabilizer_circuit(code, lowering_result, shot_index);
 }
 
 }  // namespace qerasure
