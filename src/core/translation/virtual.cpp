@@ -59,6 +59,82 @@ std::array<double, 4> first_erasure_distribution_by_step(
   return out;
 }
 
+std::array<double, 4> normalize_step_distribution(const std::array<double, 4>& in) {
+  std::array<double, 4> out = in;
+  double total = 0.0;
+  for (const double p : out) {
+    total += p;
+  }
+  if (total <= 0.0) {
+    return {0.0, 0.0, 0.0, 0.0};
+  }
+  for (double& p : out) {
+    p = clamp_probability(p / total);
+  }
+  return out;
+}
+
+std::array<double, 4> vector_to_step_distribution(const std::vector<double>& probs,
+                                                  const char* name) {
+  if (probs.size() != 4) {
+    throw std::invalid_argument(std::string(name) + " must have exactly 4 entries");
+  }
+  std::array<double, 4> out = {clamp_probability(probs[0]), clamp_probability(probs[1]),
+                               clamp_probability(probs[2]), clamp_probability(probs[3])};
+  return normalize_step_distribution(out);
+}
+
+std::array<double, 4> mask_distribution_to_active_steps(
+    const std::array<double, 4>& in, const std::array<bool, 4>& active_by_step,
+    const std::array<double, 4>& fallback) {
+  std::array<double, 4> out = in;
+  for (std::size_t step = 0; step < 4; ++step) {
+    if (!active_by_step[step]) {
+      out[step] = 0.0;
+    }
+  }
+  out = normalize_step_distribution(out);
+  double total = 0.0;
+  for (const double p : out) {
+    total += p;
+  }
+  if (total <= 0.0) {
+    return fallback;
+  }
+  return out;
+}
+
+enum class DataScheduleType : std::uint8_t {
+  XZZX = 0,
+  ZXXZ = 1,
+  OTHER = 2,
+};
+
+DataScheduleType infer_data_schedule_type(const RotatedSurfaceCode& code,
+                                          const CircuitBuildContext& ctx,
+                                          std::size_t data_qubit) {
+  bool is_x_step[4] = {false, false, false, false};
+  bool is_z_step[4] = {false, false, false, false};
+  for (std::size_t step = 0; step < 4; ++step) {
+    const std::size_t partner = code.partner_map()[step * ctx.num_qubits + data_qubit];
+    if (partner == kNoPartner) {
+      continue;
+    }
+    if (partner >= code.x_anc_offset() && partner < code.z_anc_offset()) {
+      is_x_step[step] = true;
+    } else if (partner >= code.z_anc_offset()) {
+      is_z_step[step] = true;
+    }
+  }
+  if (is_x_step[0] && is_z_step[1] && is_z_step[2] && is_x_step[3]) {
+    return DataScheduleType::XZZX;
+  }
+  if (is_z_step[0] && is_x_step[1] && is_x_step[2] && is_z_step[3]) {
+    return DataScheduleType::ZXXZ;
+  }
+  return DataScheduleType::OTHER;
+}
+
 std::size_t find_ancilla_index(const RotatedSurfaceCode& code, std::size_t data_qubit_idx,
                                PartnerSlot slot) {
   const std::size_t slot_idx = static_cast<std::size_t>(slot);
@@ -135,7 +211,9 @@ void append_virtual_timestep_spread_errors(stim::Circuit* circuit, const Rotated
                                            const LoweringParams& lowering_params,
                                            const std::vector<std::size_t>& erased_data_qubits,
                                            double two_qubit_erasure_probability,
-                                           bool condition_on_erasure_in_round) {
+                                           bool condition_on_erasure_in_round,
+                                           const std::vector<std::array<double, 4>>*
+                                               precomputed_first_probs_by_data = nullptr) {
   auto target_step_for = [&](std::size_t data_q, std::size_t target_qubit) -> std::size_t {
     if (target_qubit == kNoPartner) {
       return kNoPartner;
@@ -162,9 +240,20 @@ void append_virtual_timestep_spread_errors(stim::Circuit* circuit, const Rotated
         code.partner_map()[2 * ctx.num_qubits + data_q] != kNoPartner,
         code.partner_map()[3 * ctx.num_qubits + data_q] != kNoPartner,
     };
-    const std::array<double, 4> first_probs =
-        first_erasure_distribution_by_step(active_by_step, two_qubit_erasure_probability,
-                                           condition_on_erasure_in_round);
+    std::array<double, 4> first_probs = {0.0, 0.0, 0.0, 0.0};
+    if (precomputed_first_probs_by_data != nullptr &&
+        data_q < precomputed_first_probs_by_data->size()) {
+      const std::array<double, 4> fallback =
+          first_erasure_distribution_by_step(active_by_step, two_qubit_erasure_probability,
+                                             condition_on_erasure_in_round);
+      first_probs =
+          mask_distribution_to_active_steps((*precomputed_first_probs_by_data)[data_q],
+                                            active_by_step, fallback);
+    } else {
+      first_probs = first_erasure_distribution_by_step(active_by_step,
+                                                       two_qubit_erasure_probability,
+                                                       condition_on_erasure_in_round);
+    }
     std::array<double, 4> erased_by_step = {0.0, 0.0, 0.0, 0.0};
     double cumulative = 0.0;
     for (std::size_t s = 0; s < 4; ++s) {
@@ -240,10 +329,43 @@ void append_virtual_timestep_spread_errors(stim::Circuit* circuit, const Rotated
           const double chain_instruction_p = clamp_probability(chain_instruction.probability);
           const std::size_t chain_target = find_ancilla_index(code, data_q, chain_instruction.target_slot);
           const std::size_t chain_target_step = target_step_for(data_q, chain_target);
-          if (chain_target == kNoPartner || chain_target_step == kNoPartner || chain_target_step > emit_step) {
+
+          if (is_cond_type(chain_instruction.type)) {
+            // Branch residual must reflect COND selection probability even when the
+            // correlated COND event cannot be emitted at this lowered location.
+            residual *= (1.0 - chain_instruction_p);
+            if (chain_target == kNoPartner || chain_target_step == kNoPartner ||
+                chain_target_step > emit_step) {
+              continue;
+            }
+            // Preserve original timestep semantics even when emitting the full
+            // COND/ELSE chain later for Stim contiguous-correlated constraints.
+            const double chain_marginal_p =
+                clamp_probability(erased_by_step[chain_target_step] * chain_instruction_p);
+            if (chain_marginal_p <= 0.0) {
+              continue;
+            }
+            const PauliError chain_error = pauli_from_instruction_type(chain_instruction.type);
+            correlated_targets.clear();
+            correlated_targets.push_back(pauli_target_u32(chain_error, chain_target));
+            // Virtual decoder semantics use marginal, erasure-time-weighted probabilities
+            // for each instruction in the chain.
+            const double cond_p = clamp_probability(chain_marginal_p);
+            if (cond_p > 0.0) {
+              circuit->safe_append_ua("CORRELATED_ERROR", correlated_targets, cond_p);
+              emitted_correlated = true;
+            }
             continue;
           }
-          const double chain_marginal_p = clamp_probability(erased_by_step[emit_step] * chain_instruction_p);
+
+          if (chain_target == kNoPartner || chain_target_step == kNoPartner ||
+              chain_target_step > emit_step) {
+            continue;
+          }
+          // Preserve original timestep semantics even when emitting the full
+          // COND/ELSE chain later for Stim contiguous-correlated constraints.
+          const double chain_marginal_p =
+              clamp_probability(erased_by_step[chain_target_step] * chain_instruction_p);
           if (chain_marginal_p <= 0.0) {
             continue;
           }
@@ -251,18 +373,6 @@ void append_virtual_timestep_spread_errors(stim::Circuit* circuit, const Rotated
           correlated_targets.clear();
           correlated_targets.push_back(pauli_target_u32(chain_error, chain_target));
           single_target[0] = static_cast<uint32_t>(chain_target);
-
-          if (is_cond_type(chain_instruction.type)) {
-            // Virtual decoder semantics use marginal, erasure-time-weighted probabilities
-            // for each instruction in the chain.
-            const double cond_p = clamp_probability(chain_marginal_p);
-            if (cond_p > 0.0) {
-              circuit->safe_append_ua("CORRELATED_ERROR", correlated_targets, cond_p);
-              emitted_correlated = true;
-              residual *= (1.0 - cond_p);
-            }
-            continue;
-          }
 
           if (is_else_type(chain_instruction.type)) {
             if (emitted_correlated && residual > 0.0) {
@@ -434,6 +544,164 @@ stim::Circuit build_virtual_decoder_stim_circuit_object(
   return circuit;
 }
 
+stim::Circuit build_virtual_decoder_stim_circuit_conditioned_object(
+    const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
+    const LoweringResult& lowering_result, std::size_t shot_index,
+    double two_qubit_erasure_probability, const std::vector<std::uint8_t>& z_detector_syndrome_bits,
+    const std::vector<double>& p_step_given_consistent_xzzx,
+    const std::vector<double>& p_step_given_inconsistent_xzzx,
+    const std::vector<double>& p_step_given_consistent_zxxz,
+    const std::vector<double>& p_step_given_inconsistent_zxxz,
+    bool condition_on_erasure_in_round) {
+  if (qec_rounds == 0) {
+    throw std::invalid_argument("qec_rounds must be > 0 for virtual decoder circuit generation");
+  }
+
+  const CircuitBuildContext ctx = build_context(code);
+  const std::size_t required_syndrome_bits = qec_rounds * ctx.num_z_anc;
+  if (z_detector_syndrome_bits.size() < required_syndrome_bits) {
+    throw std::invalid_argument("z_detector_syndrome_bits is shorter than qec_rounds * num_z_anc");
+  }
+
+  const std::array<double, 4> cond_xzzx_cons =
+      vector_to_step_distribution(p_step_given_consistent_xzzx,
+                                  "p_step_given_consistent_xzzx");
+  const std::array<double, 4> cond_xzzx_incons =
+      vector_to_step_distribution(p_step_given_inconsistent_xzzx,
+                                  "p_step_given_inconsistent_xzzx");
+  const std::array<double, 4> cond_zxxz_cons =
+      vector_to_step_distribution(p_step_given_consistent_zxxz,
+                                  "p_step_given_consistent_zxxz");
+  const std::array<double, 4> cond_zxxz_incons =
+      vector_to_step_distribution(p_step_given_inconsistent_zxxz,
+                                  "p_step_given_inconsistent_zxxz");
+
+  const std::vector<std::uint8_t>* erasure_flags_ptr = nullptr;
+  if (shot_index < lowering_result.erasure_round_flags.size() &&
+      lowering_result.erasure_round_flags[shot_index].size() >= qec_rounds) {
+    erasure_flags_ptr = &lowering_result.erasure_round_flags[shot_index];
+  } else if (shot_index < lowering_result.check_error_round_flags.size() &&
+             lowering_result.check_error_round_flags[shot_index].size() >= qec_rounds) {
+    erasure_flags_ptr = &lowering_result.check_error_round_flags[shot_index];
+  } else {
+    throw std::invalid_argument("LoweringResult erasure flags do not match requested shot/qec_rounds");
+  }
+  const std::vector<std::uint8_t>& erasure_flags = *erasure_flags_ptr;
+
+  std::vector<std::vector<std::size_t>> erased_data_by_round(qec_rounds);
+  std::vector<std::vector<std::size_t>> reset_qubits_by_round(qec_rounds);
+  bool has_reset_evidence_for_shot = false;
+  if (shot_index < lowering_result.reset_round_qubits.size()) {
+    const auto& reset_pairs = lowering_result.reset_round_qubits[shot_index];
+    has_reset_evidence_for_shot = !reset_pairs.empty();
+    for (const auto& [round_idx, qubit_idx] : reset_pairs) {
+      if (round_idx < qec_rounds) {
+        reset_qubits_by_round[round_idx].push_back(qubit_idx);
+        if (qubit_idx < code.x_anc_offset()) {
+          erased_data_by_round[round_idx].push_back(qubit_idx);
+        }
+      }
+    }
+  }
+  for (std::size_t round = 0; round < qec_rounds; ++round) {
+    auto& qubits = erased_data_by_round[round];
+    std::sort(qubits.begin(), qubits.end());
+    qubits.erase(std::unique(qubits.begin(), qubits.end()), qubits.end());
+    auto& reset_qubits = reset_qubits_by_round[round];
+    std::sort(reset_qubits.begin(), reset_qubits.end());
+    reset_qubits.erase(std::unique(reset_qubits.begin(), reset_qubits.end()), reset_qubits.end());
+  }
+
+  std::vector<std::size_t> all_data_qubits;
+  all_data_qubits.reserve(ctx.num_data);
+  for (std::size_t q = 0; q < ctx.num_data; ++q) {
+    all_data_qubits.push_back(q);
+  }
+
+  std::vector<DataScheduleType> schedule_by_data(ctx.num_data, DataScheduleType::OTHER);
+  for (std::size_t q = 0; q < ctx.num_data; ++q) {
+    schedule_by_data[q] = infer_data_schedule_type(code, ctx, q);
+  }
+
+  stim::Circuit circuit;
+  std::vector<uint32_t> detector_lookbacks;
+  detector_lookbacks.reserve(8);
+  std::vector<uint32_t> detector_targets;
+  detector_targets.reserve(8);
+
+  std::vector<std::array<double, 4>> first_probs_cache_by_data(
+      ctx.num_data, {0.0, 0.0, 0.0, 0.0});
+  std::size_t cached_round = kNoPartner;
+
+  auto pre_step_hook = [](std::size_t, std::size_t) {};
+  auto post_step_hook = [&](std::size_t round, std::size_t step) {
+    if (erasure_flags[round] == 0) {
+      return;
+    }
+    const std::vector<std::size_t>& round_erased_data =
+        erased_data_by_round[round].empty() && !has_reset_evidence_for_shot
+            ? all_data_qubits
+            : erased_data_by_round[round];
+    if (round_erased_data.empty()) {
+      return;
+    }
+
+    if (cached_round != round) {
+      cached_round = round;
+      for (const std::size_t data_q : round_erased_data) {
+        if (data_q >= ctx.num_data) {
+          continue;
+        }
+        const std::array<bool, 4> active_by_step = {
+            code.partner_map()[0 * ctx.num_qubits + data_q] != kNoPartner,
+            code.partner_map()[1 * ctx.num_qubits + data_q] != kNoPartner,
+            code.partner_map()[2 * ctx.num_qubits + data_q] != kNoPartner,
+            code.partner_map()[3 * ctx.num_qubits + data_q] != kNoPartner,
+        };
+        const std::array<double, 4> fallback =
+            first_erasure_distribution_by_step(active_by_step, two_qubit_erasure_probability,
+                                               condition_on_erasure_in_round);
+        std::array<double, 4> selected = fallback;
+
+        const auto& z_slots = code.data_to_z_ancilla_slots()[data_q];
+        const bool non_boundary = z_slots.first != kNoPartner && z_slots.second != kNoPartner;
+        if (non_boundary) {
+          const std::size_t z1 = z_slots.first;
+          const std::size_t z2 = z_slots.second;
+          const std::size_t zi1 = z1 - code.z_anc_offset();
+          const std::size_t zi2 = z2 - code.z_anc_offset();
+          const std::size_t d1 = round * ctx.num_z_anc + zi1;
+          const std::size_t d2 = round * ctx.num_z_anc + zi2;
+          const std::uint8_t parity = (z_detector_syndrome_bits[d1] ^ z_detector_syndrome_bits[d2]) & 1;
+
+          if (schedule_by_data[data_q] == DataScheduleType::XZZX) {
+            selected = parity == 0 ? cond_xzzx_cons : cond_xzzx_incons;
+          } else if (schedule_by_data[data_q] == DataScheduleType::ZXXZ) {
+            selected = parity == 0 ? cond_zxxz_cons : cond_zxxz_incons;
+          }
+        }
+        first_probs_cache_by_data[data_q] =
+            mask_distribution_to_active_steps(selected, active_by_step, fallback);
+      }
+    }
+
+    append_virtual_timestep_spread_errors(&circuit, code, ctx, step, lowering_params, round_erased_data,
+                                          two_qubit_erasure_probability, condition_on_erasure_in_round,
+                                          &first_probs_cache_by_data);
+  };
+  auto pre_measure_hook = [&](std::size_t round) {
+    append_virtual_round_reset_errors(&circuit, lowering_params, reset_qubits_by_round[round]);
+  };
+
+  for (std::size_t round = 0; round < qec_rounds; ++round) {
+    append_extraction_round(&circuit, ctx, round, pre_step_hook, post_step_hook, pre_measure_hook,
+                            &detector_lookbacks, &detector_targets);
+  }
+
+  append_final_readout_detectors_and_observable(&circuit, ctx, &detector_lookbacks, &detector_targets);
+  return circuit;
+}
+
 std::string build_virtual_decoder_stim_circuit(
     const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
     const LoweringResult& lowering_result, std::size_t shot_index,
@@ -442,6 +710,24 @@ std::string build_virtual_decoder_stim_circuit(
                                                    lowering_result, shot_index,
                                                    two_qubit_erasure_probability,
                                                    condition_on_erasure_in_round).str();
+}
+
+std::string build_virtual_decoder_stim_circuit_conditioned(
+    const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
+    const LoweringResult& lowering_result, std::size_t shot_index,
+    double two_qubit_erasure_probability, const std::vector<std::uint8_t>& z_detector_syndrome_bits,
+    const std::vector<double>& p_step_given_consistent_xzzx,
+    const std::vector<double>& p_step_given_inconsistent_xzzx,
+    const std::vector<double>& p_step_given_consistent_zxxz,
+    const std::vector<double>& p_step_given_inconsistent_zxxz,
+    bool condition_on_erasure_in_round) {
+  return build_virtual_decoder_stim_circuit_conditioned_object(
+             code, qec_rounds, lowering_params, lowering_result, shot_index,
+             two_qubit_erasure_probability, z_detector_syndrome_bits,
+             p_step_given_consistent_xzzx, p_step_given_inconsistent_xzzx,
+             p_step_given_consistent_zxxz, p_step_given_inconsistent_zxxz,
+             condition_on_erasure_in_round)
+      .str();
 }
 
 }  // namespace qerasure

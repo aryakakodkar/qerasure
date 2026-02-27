@@ -460,6 +460,13 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
   std::vector<std::size_t> erased_pos(num_qubits, kNoPartner);
   std::vector<std::size_t> erased_qubits;
   erased_qubits.reserve(num_qubits / 4 + 1);
+  // Per-data-qubit COND/ELSE chain state scoped to the current round.
+  std::vector<std::size_t> active_cond_idx_by_data(num_data_qubits, kNoPartner);
+  std::vector<std::uint64_t> active_cond_threshold_by_data(num_data_qubits, 0);
+  std::vector<std::uint8_t> cond_trial_done_by_data(num_data_qubits, 0);
+  std::vector<std::uint8_t> cond_selected_by_data(num_data_qubits, 0);
+  std::vector<std::uint8_t> cond_emitted_by_data(num_data_qubits, 0);
+  std::vector<std::uint8_t> else_fired_by_data(num_data_qubits, 0);
 
   for (std::size_t shot = 0; shot < sim_result.sparse_erasures.size(); ++shot) {
     std::size_t event_index = 0;
@@ -480,8 +487,23 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
     lowered_events.reserve(events.size() + events.size() / 2 + 8);
 
     erased_qubits.clear();
+    std::fill(active_cond_idx_by_data.begin(), active_cond_idx_by_data.end(), kNoPartner);
+    std::fill(active_cond_threshold_by_data.begin(), active_cond_threshold_by_data.end(), 0);
+    std::fill(cond_trial_done_by_data.begin(), cond_trial_done_by_data.end(), 0);
+    std::fill(cond_selected_by_data.begin(), cond_selected_by_data.end(), 0);
+    std::fill(cond_emitted_by_data.begin(), cond_emitted_by_data.end(), 0);
+    std::fill(else_fired_by_data.begin(), else_fired_by_data.end(), 0);
 
     for (std::size_t t = 0; t + 1 < offsets.size(); ++t) {
+      if ((t % 4) == 0) {
+        // A COND/ELSE chain decision should not leak between rounds.
+        std::fill(active_cond_idx_by_data.begin(), active_cond_idx_by_data.end(), kNoPartner);
+        std::fill(active_cond_threshold_by_data.begin(), active_cond_threshold_by_data.end(), 0);
+        std::fill(cond_trial_done_by_data.begin(), cond_trial_done_by_data.end(), 0);
+        std::fill(cond_selected_by_data.begin(), cond_selected_by_data.end(), 0);
+        std::fill(cond_emitted_by_data.begin(), cond_emitted_by_data.end(), 0);
+        std::fill(else_fired_by_data.begin(), else_fired_by_data.end(), 0);
+      }
       const std::size_t end_index = offsets[t + 1];
 
       // First update erased/reset state from simulator events at this timestep.
@@ -549,39 +571,85 @@ LoweringResult Lowerer::lower(const ErasureSimResult& sim_result) {
             continue;
           }
 
-          bool conditional_flag = false;
-          for (const CompiledInstruction& instruction : program.instructions) {
-            if (is_else_type(instruction.type) && conditional_flag) {
-              continue;
-            }
+          std::size_t& active_cond_idx = active_cond_idx_by_data[erased_qubit];
+          std::uint64_t& active_cond_threshold = active_cond_threshold_by_data[erased_qubit];
+          std::uint8_t& cond_trial_done = cond_trial_done_by_data[erased_qubit];
+          std::uint8_t& cond_selected = cond_selected_by_data[erased_qubit];
+          std::uint8_t& cond_emitted = cond_emitted_by_data[erased_qubit];
+          std::uint8_t& else_fired = else_fired_by_data[erased_qubit];
 
-            // Instruction is all-or-nothing: all targets must be on the active partner.
-            bool feasible = !(instruction.target.qubit_idx == kNoPartner ||
-                              instruction.target.qubit_idx != current_partner);
+          for (std::size_t instruction_idx = 0; instruction_idx < program.instructions.size();
+               ++instruction_idx) {
+            const CompiledInstruction& instruction = program.instructions[instruction_idx];
 
-            if (!feasible) {
-              if (is_cond_type(instruction.type)) {
-                conditional_flag = false; // un-flag the conditional
+            // Instruction is all-or-nothing: target must be the active partner.
+            const bool feasible = !(instruction.target.qubit_idx == kNoPartner ||
+                                    instruction.target.qubit_idx != current_partner);
+
+            if (is_cond_type(instruction.type)) {
+              if (active_cond_idx == kNoPartner || instruction_idx > active_cond_idx) {
+                // New COND chain starts here.
+                active_cond_idx = instruction_idx;
+                active_cond_threshold = instruction.threshold;
+                cond_trial_done = 0;
+                cond_selected = 0;
+                cond_emitted = 0;
+                else_fired = 0;
+              } else if (instruction_idx < active_cond_idx) {
+                // Stale COND from an earlier chain while rescanning instructions.
+                continue;
+              }
+
+              if (!feasible) {
+                continue;
+              }
+              if (!cond_trial_done) {
+                cond_trial_done = 1;
+                cond_selected = sample_with_threshold(active_cond_threshold) ? 1 : 0;
+              }
+              if (cond_selected && !cond_emitted) {
+                lowered_events.push_back(
+                    {instruction.target.qubit_idx, instruction.target.error_type,
+                     LoweredEventOrigin::SPREAD});
+                ++num_lowering_events;
+                cond_emitted = 1;
               }
               continue;
             }
 
-            const bool fires = sample_with_threshold(instruction.threshold);
-            if (is_cond_type(instruction.type)) {
-              conditional_flag = fires;
-            } else if (is_else_type(instruction.type) && fires) {
-              conditional_flag = true;
-            }
-            if (!fires) {
+            if (is_else_type(instruction.type)) {
+              if (active_cond_idx != kNoPartner && instruction_idx < active_cond_idx) {
+                // ELSE before current chain is stale.
+                continue;
+              }
+              if (active_cond_idx != kNoPartner && !cond_trial_done) {
+                // COND was never trialed (e.g. target not reached). Resolve branch
+                // before ELSE by sampling the COND branch once.
+                cond_trial_done = 1;
+                cond_selected = sample_with_threshold(active_cond_threshold) ? 1 : 0;
+              }
+              if (cond_selected || else_fired || !feasible) {
+                continue;
+              }
+              if (sample_with_threshold(instruction.threshold)) {
+                lowered_events.push_back(
+                    {instruction.target.qubit_idx, instruction.target.error_type,
+                     LoweredEventOrigin::SPREAD});
+                ++num_lowering_events;
+                else_fired = 1;
+              }
               continue;
             }
 
-            const CompiledTargetOp& target = instruction.target;
-            if (target.error_type == PauliError::NO_ERROR || target.qubit_idx == kNoPartner ||
-                target.qubit_idx != current_partner) {
+            if (!feasible) {
               continue;
             }
-            lowered_events.push_back({target.qubit_idx, target.error_type, LoweredEventOrigin::SPREAD});
+            if (!sample_with_threshold(instruction.threshold)) {
+              continue;
+            }
+            lowered_events.push_back(
+                {instruction.target.qubit_idx, instruction.target.error_type,
+                 LoweredEventOrigin::SPREAD});
             ++num_lowering_events;
           }
         }

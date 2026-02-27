@@ -328,4 +328,22 @@ PYBIND11_MODULE(qerasure_python, m) {
         py::arg("shot_index") = 0, py::arg("two_qubit_erasure_probability"),
         py::arg("condition_on_erasure_in_round") = true,
         "Generate a Stim virtual decoder circuit object with probabilistic spread injection.");
+  m.def("build_virtual_decoder_stim_circuit_conditioned",
+        &qerasure::build_virtual_decoder_stim_circuit_conditioned, py::arg("code"),
+        py::arg("qec_rounds"), py::arg("lowering_params"), py::arg("lowering_result"),
+        py::arg("shot_index") = 0, py::arg("two_qubit_erasure_probability"),
+        py::arg("z_detector_syndrome_bits"), py::arg("p_step_given_consistent_xzzx"),
+        py::arg("p_step_given_inconsistent_xzzx"), py::arg("p_step_given_consistent_zxxz"),
+        py::arg("p_step_given_inconsistent_zxxz"),
+        py::arg("condition_on_erasure_in_round") = true,
+        "Generate a Stim-format virtual decoder circuit using syndrome-conditioned first-erasure priors.");
+  m.def("build_virtual_decoder_stim_circuit_conditioned_object",
+        &qerasure::build_virtual_decoder_stim_circuit_conditioned_object, py::arg("code"),
+        py::arg("qec_rounds"), py::arg("lowering_params"), py::arg("lowering_result"),
+        py::arg("shot_index") = 0, py::arg("two_qubit_erasure_probability"),
+        py::arg("z_detector_syndrome_bits"), py::arg("p_step_given_consistent_xzzx"),
+        py::arg("p_step_given_inconsistent_xzzx"), py::arg("p_step_given_consistent_zxxz"),
+        py::arg("p_step_given_inconsistent_zxxz"),
+        py::arg("condition_on_erasure_in_round") = true,
+        "Generate a Stim virtual decoder circuit object using syndrome-conditioned first-erasure priors.");
 }
