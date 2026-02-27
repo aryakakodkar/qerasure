@@ -21,6 +21,7 @@ enum class OpCode {
     // Erasure instructions
     ERASURE_OPS,
     ERASE,
+    ERASE2,
     EC,
     ECR,
     COND_ER
@@ -39,7 +40,7 @@ inline bool is_probabilistic_op(OpCode op) {
 }
 
 inline bool is_two_qubit_op(OpCode op) {
-    return op == OpCode::CX; // limits support for now
+    return op == OpCode::CX || op == OpCode::ERASE2; // limits support for now
 }
 
 inline const std::unordered_map<std::string, OpCode>& opcode_map() {
@@ -53,6 +54,7 @@ inline const std::unordered_map<std::string, OpCode>& opcode_map() {
         {"Z_ERROR",     OpCode::Z_ERROR},
         {"DEPOLARIZE1", OpCode::DEPOLARIZE1},
         {"ERASE",       OpCode::ERASE},
+        {"ERASE2",      OpCode::ERASE2},
         {"EC",          OpCode::EC},
         {"ECR",         OpCode::ECR},
         {"COND_ER",     OpCode::COND_ER},
