@@ -6,3 +6,4 @@ AGENTS.md
 codex_reports/*
 build-release/*
 apps/results/
+.vscode/
