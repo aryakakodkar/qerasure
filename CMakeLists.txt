@@ -134,5 +134,5 @@ pybind11_add_module(qerasure_python
     src/interop/python/pybindings.cpp
 )
 
-target_link_libraries(qerasure_python PRIVATE qerasure)
+target_link_libraries(qerasure_python PRIVATE qerasure qerasure_stim)
 target_include_directories(qerasure_python PRIVATE ${CMAKE_SOURCE_DIR}/include)

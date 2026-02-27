@@ -33,6 +33,8 @@ from .translation_utils import (
     build_surface_code_stim_circuit,
 )
 from .virtual_translation_utils import (
+    build_virtual_decoder_stim_circuit_conditioned,
+    build_virtual_decoder_stim_circuit_conditioned_object,
     build_virtual_decoder_stim_circuit,
     build_virtual_decoder_stim_circuit_object,
     build_virtual_logical_stabilizer_circuit,
@@ -66,6 +68,8 @@ __all__ = [
     "build_logical_stabilizer_circuit_object",
     "build_logically_equivalent_erasure_stim_circuit",
     "build_logically_equivalent_erasure_stim_circuit_object",
+    "build_virtual_decoder_stim_circuit_conditioned",
+    "build_virtual_decoder_stim_circuit_conditioned_object",
     "build_virtual_decoder_stim_circuit",
     "build_virtual_decoder_stim_circuit_object",
     "build_virtual_logical_stabilizer_circuit",

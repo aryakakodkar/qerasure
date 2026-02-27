@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "qerasure/core/code/rotated_surface_code.h"
 
@@ -54,5 +56,31 @@ std::string build_virtual_decoder_stim_circuit(
     const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
     const LoweringResult& lowering_result, std::size_t shot_index,
     double two_qubit_erasure_probability, bool condition_on_erasure_in_round = true);
+
+// Build a syndrome-conditioned virtual decoder circuit.
+//
+// For non-boundary data qubits, first-erasure timestep probabilities are selected from the
+// provided conditional distributions based on same-round parity consistency of the two associated
+// Z-check detectors in `z_detector_syndrome_bits`.
+//
+// For boundary data qubits, the default Bernoulli-by-step model is used.
+stim::Circuit build_virtual_decoder_stim_circuit_conditioned_object(
+    const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
+    const LoweringResult& lowering_result, std::size_t shot_index,
+    double two_qubit_erasure_probability, const std::vector<std::uint8_t>& z_detector_syndrome_bits,
+    const std::vector<double>& p_step_given_consistent_xzzx,
+    const std::vector<double>& p_step_given_inconsistent_xzzx,
+    const std::vector<double>& p_step_given_consistent_zxxz,
+    const std::vector<double>& p_step_given_inconsistent_zxxz,
+    bool condition_on_erasure_in_round = true);
+std::string build_virtual_decoder_stim_circuit_conditioned(
+    const RotatedSurfaceCode& code, std::size_t qec_rounds, const LoweringParams& lowering_params,
+    const LoweringResult& lowering_result, std::size_t shot_index,
+    double two_qubit_erasure_probability, const std::vector<std::uint8_t>& z_detector_syndrome_bits,
+    const std::vector<double>& p_step_given_consistent_xzzx,
+    const std::vector<double>& p_step_given_inconsistent_xzzx,
+    const std::vector<double>& p_step_given_consistent_zxxz,
+    const std::vector<double>& p_step_given_inconsistent_zxxz,
+    bool condition_on_erasure_in_round = true);
 
 }  // namespace qerasure

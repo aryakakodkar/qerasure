@@ -3,6 +3,7 @@
 
 #include <string>
 
+#include "stim/circuit/circuit.h"
 #include "qerasure/core/code/rotated_surface_code.h"
 #include "qerasure/core/lowering/lowering.h"
 #include "qerasure/core/noise/noise_params.h"
@@ -295,20 +296,54 @@ PYBIND11_MODULE(qerasure_python, m) {
   m.def("build_surf_stabilizer_circuit", &qerasure::build_surf_stabilizer_circuit,
         py::arg("code"), py::arg("qec_rounds"),
         "Generate a Stim-format rotated-surface stabilizer circuit string.");
+  m.def("build_surf_stabilizer_circuit_object", &qerasure::build_surf_stabilizer_circuit_object,
+        py::arg("code"), py::arg("qec_rounds"),
+        "Generate a Stim rotated-surface stabilizer circuit object.");
   m.def("build_surface_code_stim_circuit", &qerasure::build_surface_code_stim_circuit,
         py::arg("code"), py::arg("qec_rounds"),
         "Generate a Stim-format rotated-surface-code circuit string.");
   m.def("build_logical_stabilizer_circuit", &qerasure::build_logical_stabilizer_circuit,
         py::arg("code"), py::arg("lowering_result"), py::arg("shot_index") = 0,
         "Generate a Stim-format logical stabilizer circuit with injected lowered errors.");
+  m.def("build_logical_stabilizer_circuit_object", &qerasure::build_logical_stabilizer_circuit_object,
+        py::arg("code"), py::arg("lowering_result"), py::arg("shot_index") = 0,
+        "Generate a Stim logical stabilizer circuit object with injected lowered errors.");
   m.def("build_logically_equivalent_erasure_stim_circuit",
         &qerasure::build_logically_equivalent_erasure_stim_circuit, py::arg("code"),
         py::arg("lowering_result"), py::arg("shot_index") = 0,
         "Generate a Stim-format circuit with deterministic lowered-erasure errors injected by timestep.");
+  m.def("build_logically_equivalent_erasure_stim_circuit_object",
+        &qerasure::build_logically_equivalent_erasure_stim_circuit_object, py::arg("code"),
+        py::arg("lowering_result"), py::arg("shot_index") = 0,
+        "Generate a Stim circuit object with deterministic lowered-erasure errors injected by timestep.");
   m.def("build_virtual_decoder_stim_circuit", &qerasure::build_virtual_decoder_stim_circuit,
         py::arg("code"), py::arg("qec_rounds"), py::arg("lowering_params"),
         py::arg("lowering_result"), py::arg("shot_index") = 0,
         py::arg("two_qubit_erasure_probability"),
         py::arg("condition_on_erasure_in_round") = true,
         "Generate a Stim-format virtual decoder circuit with probabilistic spread injection.");
+  m.def("build_virtual_decoder_stim_circuit_object",
+        &qerasure::build_virtual_decoder_stim_circuit_object, py::arg("code"),
+        py::arg("qec_rounds"), py::arg("lowering_params"), py::arg("lowering_result"),
+        py::arg("shot_index") = 0, py::arg("two_qubit_erasure_probability"),
+        py::arg("condition_on_erasure_in_round") = true,
+        "Generate a Stim virtual decoder circuit object with probabilistic spread injection.");
+  m.def("build_virtual_decoder_stim_circuit_conditioned",
+        &qerasure::build_virtual_decoder_stim_circuit_conditioned, py::arg("code"),
+        py::arg("qec_rounds"), py::arg("lowering_params"), py::arg("lowering_result"),
+        py::arg("shot_index") = 0, py::arg("two_qubit_erasure_probability"),
+        py::arg("z_detector_syndrome_bits"), py::arg("p_step_given_consistent_xzzx"),
+        py::arg("p_step_given_inconsistent_xzzx"), py::arg("p_step_given_consistent_zxxz"),
+        py::arg("p_step_given_inconsistent_zxxz"),
+        py::arg("condition_on_erasure_in_round") = true,
+        "Generate a Stim-format virtual decoder circuit using syndrome-conditioned first-erasure priors.");
+  m.def("build_virtual_decoder_stim_circuit_conditioned_object",
+        &qerasure::build_virtual_decoder_stim_circuit_conditioned_object, py::arg("code"),
+        py::arg("qec_rounds"), py::arg("lowering_params"), py::arg("lowering_result"),
+        py::arg("shot_index") = 0, py::arg("two_qubit_erasure_probability"),
+        py::arg("z_detector_syndrome_bits"), py::arg("p_step_given_consistent_xzzx"),
+        py::arg("p_step_given_inconsistent_xzzx"), py::arg("p_step_given_consistent_zxxz"),
+        py::arg("p_step_given_inconsistent_zxxz"),
+        py::arg("condition_on_erasure_in_round") = true,
+        "Generate a Stim virtual decoder circuit object using syndrome-conditioned first-erasure priors.");
 }

@@ -1,5 +1,8 @@
 build/*
-__pycache__/*
+__pycache__/
+**/__pycache__/
+*.pyc
 AGENTS.md
 codex_reports/*
 build-release/*
+apps/results/
