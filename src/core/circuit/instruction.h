@@ -59,6 +59,10 @@ inline bool is_hook_op(OpCode op) {
     return op == OpCode::EC || op == OpCode::ECR || op == OpCode::COND_ER;
 }
 
+inline bool is_erasure_check_op(OpCode op) {
+    return op == OpCode::EC || op == OpCode::ECR;
+}
+
 inline bool is_erasure_reset_op(OpCode op) {
     return op == OpCode::ECR || op == OpCode::COND_ER;
 }
