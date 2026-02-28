@@ -177,6 +177,30 @@ Users/aryakakodkar/Documents/qerasure/src/core/circuit/circuit.cc.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/circuit_scratch.dir/build.make CMakeFiles/circuit_scratch.dir/Users/aryakakodkar/Documents/qerasure/src/core/circuit/circuit.cc.s
 .PHONY : Users/aryakakodkar/Documents/qerasure/src/core/circuit/circuit.cc.s
 
+Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.o: Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.o
+.PHONY : Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.o
+
+# target to build an object file
+Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/circuit_scratch.dir/build.make CMakeFiles/circuit_scratch.dir/Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.o
+.PHONY : Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.o
+
+Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.i: Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.i
+.PHONY : Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.i
+
+# target to preprocess a source file
+Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/circuit_scratch.dir/build.make CMakeFiles/circuit_scratch.dir/Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.i
+.PHONY : Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.i
+
+Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.s: Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.s
+.PHONY : Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.s
+
+# target to generate assembly for a file
+Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/circuit_scratch.dir/build.make CMakeFiles/circuit_scratch.dir/Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.s
+.PHONY : Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.cc.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -192,6 +216,9 @@ help:
 	@echo "... Users/aryakakodkar/Documents/qerasure/src/core/circuit/circuit.o"
 	@echo "... Users/aryakakodkar/Documents/qerasure/src/core/circuit/circuit.i"
 	@echo "... Users/aryakakodkar/Documents/qerasure/src/core/circuit/circuit.s"
+	@echo "... Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.o"
+	@echo "... Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.i"
+	@echo "... Users/aryakakodkar/Documents/qerasure/src/core/circuit/compile.s"
 .PHONY : help
 
 

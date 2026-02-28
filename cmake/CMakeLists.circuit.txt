@@ -1,8 +1,12 @@
 add_executable(circuit_scratch
     ${CMAKE_SOURCE_DIR}/../apps/circuit_scratch.cc
     ${CMAKE_SOURCE_DIR}/../src/core/circuit/circuit.cc
+    ${CMAKE_SOURCE_DIR}/../src/core/circuit/compile.cc
 )
 
 target_include_directories(circuit_scratch PRIVATE
+    ${CMAKE_SOURCE_DIR}/../src
+    ${CMAKE_SOURCE_DIR}/../src/core
     ${CMAKE_SOURCE_DIR}/../src/core/circuit
+    ${CMAKE_SOURCE_DIR}/../src/core/model
 )

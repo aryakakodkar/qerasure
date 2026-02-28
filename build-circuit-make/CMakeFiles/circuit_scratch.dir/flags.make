@@ -4,9 +4,7 @@
 # compile CXX with /usr/bin/c++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/Users/aryakakodkar/Documents/qerasure/cmake/../src/core/circuit
+CXX_INCLUDES = -I/Users/aryakakodkar/Documents/qerasure/cmake/../src -I/Users/aryakakodkar/Documents/qerasure/cmake/../src/core -I/Users/aryakakodkar/Documents/qerasure/cmake/../src/core/circuit -I/Users/aryakakodkar/Documents/qerasure/cmake/../src/core/model
 
-CXX_FLAGSarm64 = -std=c++17 -arch arm64
-
-CXX_FLAGS = -std=c++17 -arch arm64
+CXX_FLAGS = -std=c++17
 

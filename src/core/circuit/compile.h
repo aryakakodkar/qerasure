@@ -13,31 +13,31 @@ struct ErasureOnset {
 };
 
 struct ErasureSpread {
-    uint32_t qubit_index; // index of qubit that can be affected by spread
+    uint32_t aff_qubit_index; // index of qubit that can be affected by spread
     PauliChannel spread_channel;
 };
 
-enum class HookType {
-    EC,
-    ECR,
-    COND_ER
-};
-
 struct ErasureHook {
-    HookType type;
+    OpCode type;
     uint32_t qubit_index;
     double probability = 0.0;
+    PauliChannel reset_channel = {}; // only relevant for reset-type hooks
 };
 
 struct CompiledErasureProgram  {
-    CompiledErasureProgram(ErasureCircuit& circuit);
+    CompiledErasureProgram(const ErasureCircuit& circuit, const ErasureModel& model);
 
-    std::vector<Instruction> instructions;
+    std::vector<Instruction> stim_instructions;
 
     std::vector<ErasureOnset> onsets;
-    std::vector<uint32_t> onset_offsets;
+    std::vector<uint32_t> onset_offsets = {0};
+
+    std::vector<ErasureSpread> spreads;
+    std::vector<uint32_t> spread_offsets = {0};
 
     std::vector<ErasureHook> hooks;
-    std::vector<uint32_t> hook_offsets;
+    std::vector<uint32_t> hook_offsets = {0};
+
+    void print_summary() const;
 };
 
