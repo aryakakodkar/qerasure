@@ -5,6 +5,7 @@
 
 #include "instruction.h"
 
+namespace qerasure::circuit {
 
 class ErasureCircuit {
     public:
@@ -14,7 +15,8 @@ class ErasureCircuit {
         void append(OpCode op, const std::vector<uint32_t>& targets, double arg = 0.0);
 
         // Safe append with string
-        void safe_append(std::string op, const std::vector<uint32_t>& targets, double arg = 0.0);
+        void safe_append(const std::string& op, const std::vector<uint32_t>& targets,
+                         double arg = 0.0);
 
         void from_string(const std::string& circuit_str);
         void from_file(const std::string& filepath);
@@ -31,3 +33,5 @@ class ErasureCircuit {
         // Shared parsing logic for from_string and from_file.
         void from_stream_(std::istream& stream);
 };
+
+}  // namespace qerasure::circuit

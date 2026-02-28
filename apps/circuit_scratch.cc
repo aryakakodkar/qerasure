@@ -8,7 +8,7 @@
 #include <iostream>
 
 int main() {
-
+  using namespace qerasure::circuit;  // NOLINT
   ErasureCircuit circuit;
   const std::vector<uint32_t> targets = {0, 1};
 

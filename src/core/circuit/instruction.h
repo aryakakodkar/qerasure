@@ -1,9 +1,13 @@
 # pragma once
 
-#include<stdexcept>
-#include <vector>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <vector>
+
+#include <stdexcept>
+
+namespace qerasure::circuit {
 
 enum class OpCode {
     // Stim operations
@@ -93,3 +97,5 @@ struct Instruction {
 
     double arg = 0.0; // probability if needed
 };
+
+}  // namespace qerasure::circuit
