@@ -1,11 +1,15 @@
-# pragma once
+#pragma once
 
 #include <cstdint>
+#include <optional>
+#include <vector>
 
 #include "instruction.h"
 #include "circuit.h"
-#include "model/pauli_channel.h"
+#include "core/model/pauli_channel.h"
 #include "erasure_model.h"
+
+namespace qerasure::circuit {
 
 struct ErasureOnset {
     uint32_t qubit_index;
@@ -29,23 +33,21 @@ struct ErasureReset {
     PauliChannel reset_channel;
 };
 
+// Group operations by time for cheap sampling at runtime
+struct OperationGroup {
+    std::optional<Instruction> stim_instruction;
+    std::vector<ErasureOnset> onsets;
+    std::vector<ErasureSpread> spreads;
+    std::vector<ErasureCheck> checks;
+    std::vector<ErasureReset> resets;
+};
+
 struct CompiledErasureProgram  {
     CompiledErasureProgram(const ErasureCircuit& circuit, const ErasureModel& model);
 
-    std::vector<Instruction> stim_instructions;
-
-    std::vector<ErasureOnset> onsets;
-    std::vector<uint32_t> onset_offsets = {0};
-
-    std::vector<ErasureSpread> spreads;
-    std::vector<uint32_t> spread_offsets = {0};
-
-    std::vector<ErasureCheck> checks;
-    std::vector<uint32_t> check_offsets = {0};
-
-    std::vector<ErasureReset> resets;
-    std::vector<uint32_t> reset_offsets = {0};
+    std::vector<OperationGroup> operation_groups;
 
     void print_summary() const;
 };
 
+}  // namespace qerasure::circuit
