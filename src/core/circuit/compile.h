@@ -17,11 +17,16 @@ struct ErasureSpread {
     PauliChannel spread_channel;
 };
 
-struct ErasureHook {
-    OpCode type;
+struct ErasureCheck {
     uint32_t qubit_index;
-    double probability = 0.0;
-    PauliChannel reset_channel = {}; // only relevant for reset-type hooks
+    double false_negative_prob;
+    double false_positive_prob;
+};
+
+struct ErasureReset {
+    uint32_t qubit_index;
+    double reset_failure_prob;
+    PauliChannel reset_channel;
 };
 
 struct CompiledErasureProgram  {
@@ -35,8 +40,11 @@ struct CompiledErasureProgram  {
     std::vector<ErasureSpread> spreads;
     std::vector<uint32_t> spread_offsets = {0};
 
-    std::vector<ErasureHook> hooks;
-    std::vector<uint32_t> hook_offsets = {0};
+    std::vector<ErasureCheck> checks;
+    std::vector<uint32_t> check_offsets = {0};
+
+    std::vector<ErasureReset> resets;
+    std::vector<uint32_t> reset_offsets = {0};
 
     void print_summary() const;
 };

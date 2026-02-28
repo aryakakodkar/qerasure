@@ -20,6 +20,9 @@ struct ErasureModel {
     PauliChannel reset;
     TQGSpreadModel spread;
 
+    double check_false_negative_prob = 0.0;
+    double check_false_positive_prob = 0.0;
+
     ErasureModel(uint32_t max_persistence = 0, 
                  const PauliChannel& onset = {}, 
                  const PauliChannel& reset = {}, 

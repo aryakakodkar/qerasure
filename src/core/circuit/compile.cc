@@ -37,26 +37,35 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     spreads.push_back({target2, model.onset});
                 }
             }
-        } else if (is_hook_op(instr.op)) {
-            bool is_reset = is_erasure_reset_op(instr.op);
+        } else if (is_erasure_check_op(instr.op)) {
             for (const auto& target : instr.targets) {
-                if (is_reset) {
-                    if (possibly_erased_qubits.find(target) == possibly_erased_qubits.end()) {
-                        continue; // if qubit couldn't have been erased, skip
-                    } 
-                    if (possibly_erased_qubits[target] == max_persistence - 1) {
-                        possibly_erased_qubits.erase(target); // erasure cannot persist further
-                        
-                    } else {
-                        possibly_erased_qubits[target]++; // qubit survives another reset
-                    }
+                if (possibly_erased_qubits.find(target) == possibly_erased_qubits.end()) {
+                    continue;
                 }
-                hooks.push_back({instr.op, target, instr.arg});
+                possibly_erased_qubits[target]++;
+                checks.push_back({target, model.check_false_negative_prob, model.check_false_positive_prob}); // false negative and false positive probs are set later
+            }
+        } if (is_erasure_reset_op(instr.op)) {
+            for (const auto& target : instr.targets) {
+                // check if qubit can be erased and was checked since last erase op.
+                if (possibly_erased_qubits.find(target) == possibly_erased_qubits.end()
+                    || possibly_erased_qubits[target] == 0) {
+                    continue;
+                } else if (possibly_erased_qubits[target] >= max_persistence) {
+                    resets.push_back({target, 0.0, model.reset}); // if max persistence exceeded, reset is guaranteed to succeed
+                }
+                resets.push_back({target, instr.arg, model.reset});
+                possibly_erased_qubits[target]++;
+                if (possibly_erased_qubits[target] == max_persistence) {
+                    possibly_erased_qubits.erase(target);
+                }
             }
         }
 
         onset_offsets.push_back(static_cast<uint32_t>(onsets.size()));
-        hook_offsets.push_back(static_cast<uint32_t>(hooks.size()));
+        check_offsets.push_back(static_cast<uint32_t>(checks.size()));
+        reset_offsets.push_back(static_cast<uint32_t>(resets.size()));
+        spread_offsets.push_back(static_cast<uint32_t>(spreads.size()));
     }
 }
 
@@ -71,9 +80,18 @@ void CompiledErasureProgram::print_summary() const {
             const auto& onset = onsets[j];
             std::cout << "  Onset - Qubit: " << onset.qubit_index << ", Probability: " << onset.probability << "\n";
         }
-        for (size_t j = hook_offsets[i]; j < hook_offsets[i + 1]; ++j) {
-            const auto& hook = hooks[j];
-            std::cout << "  Hook - Type: " << static_cast<int>(hook.type) << ", Qubit: " << hook.qubit_index << ", Probability: " << hook.probability << "\n";
+        for (size_t j = check_offsets[i]; j < check_offsets[i + 1]; ++j) {
+            const auto& check = checks[j];
+            std::cout << "  Check - Qubit: " << check.qubit_index << ", False Negative: " << check.false_negative_prob << ", False Positive: " << check.false_positive_prob << "\n";
         }
+        for (size_t j = reset_offsets[i]; j < reset_offsets[i + 1]; ++j) {
+            const auto& reset = resets[j];
+            std::cout << "  Reset - Qubit: " << reset.qubit_index << ", Reset Failure Prob: " << reset.reset_failure_prob 
+                      << ", Reset Channel: (X: " << reset.reset_channel.p_x << ", Y: " << reset.reset_channel.p_y << ", Z: " << reset.reset_channel.p_z << ")\n";
+        }
+        for (size_t j = spread_offsets[i]; j < spread_offsets[i + 1]; ++j) {
+            const auto& spread = spreads[j];
+            std::cout << "  Spread - Affected Qubit: " << spread.aff_qubit_index << ", Spread Channel: (X: " << spread.spread_channel.p_x << ", Y: " << spread.spread_channel.p_y << ", Z: " << spread.spread_channel.p_z << ")\n";
+        }  
     }
 }
