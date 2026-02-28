@@ -18,6 +18,10 @@ class ErasureCircuit {
 
         void from_string(const std::string& circuit_str);
         void from_file(const std::string& filepath);
+        
+        const std::vector<Instruction>& instructions() const {
+            return instructions_;
+        }   
 
     private:
         std::vector<Instruction> instructions_;

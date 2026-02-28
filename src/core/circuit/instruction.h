@@ -31,6 +31,10 @@ inline bool is_stim_op(OpCode op) {
     return op > OpCode::STIM_OPS && op != OpCode::STIM_PROB_OPS && op < OpCode::ERASURE_OPS;
 }
 
+inline bool is_entangling_op(OpCode op) {
+    return op == OpCode::CX;
+}
+
 inline bool is_erasure_op(OpCode op) {
     return op > OpCode::ERASURE_OPS;
 }
@@ -41,6 +45,22 @@ inline bool is_probabilistic_op(OpCode op) {
 
 inline bool is_two_qubit_op(OpCode op) {
     return op == OpCode::CX || op == OpCode::ERASE2; // limits support for now
+}
+
+inline bool is_single_onset_op(OpCode op) {
+    return op == OpCode::ERASE;
+}
+
+inline bool is_multi_onset_op(OpCode op) {
+    return op == OpCode::ERASE2;
+}
+
+inline bool is_hook_op(OpCode op) {
+    return op == OpCode::EC || op == OpCode::ECR || op == OpCode::COND_ER;
+}
+
+inline bool is_erasure_reset_op(OpCode op) {
+    return op == OpCode::ECR || op == OpCode::COND_ER;
 }
 
 inline const std::unordered_map<std::string, OpCode>& opcode_map() {
