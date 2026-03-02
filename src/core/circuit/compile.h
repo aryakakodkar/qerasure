@@ -24,6 +24,7 @@ struct ErasureOnsetPair {
 };
 
 struct ErasureSpread {
+    uint32_t source_qubit_index; // index of erased qubit causing spread
     uint32_t aff_qubit_index; // index of qubit that can be affected by spread
     ThresholdedPauliChannel spread_channel;
 };
@@ -57,6 +58,7 @@ struct CompiledErasureProgram  {
     std::vector<OperationGroup> operation_groups;
 
     inline uint32_t max_qubit_index() const { return max_qubit_index_; }
+    inline uint32_t num_checks() const { return num_checks_; }
     inline const std::vector<uint32_t>& erasable_qubits() const { return erasable_qubits_; }
     inline uint32_t max_persistence() const { return max_persistence_; }
     inline const ThresholdedPauliChannel& thresholded_onset_channel() const { return thresholded_onset_; }
@@ -65,6 +67,7 @@ struct CompiledErasureProgram  {
 
     private:
         uint32_t max_qubit_index_ = 0;
+        uint32_t num_checks_ = 0;
         uint32_t max_persistence_ = 0;
         std::vector<uint32_t> erasable_qubits_; // check if needed
 

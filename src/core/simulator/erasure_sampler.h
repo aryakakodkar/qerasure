@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include "core/circuit/compile.h"
@@ -41,6 +43,7 @@ struct SampledReset {
 };
 
 struct SampledOperationGroup {
+    std::optional<circuit::Instruction> stim_instruction;
     std::vector<SampledOnset> onsets;
     std::vector<SampledSpread> spreads;
     std::vector<SampledCheck> checks;
@@ -50,6 +53,9 @@ struct SampledOperationGroup {
 // Simulation structs
 struct SampledShot {
     std::vector<SampledOperationGroup> operation_groups;
+
+    // Human-readable dump grouped by operation index.
+    std::string to_string() const;
 };
 
 struct SampledBatch {

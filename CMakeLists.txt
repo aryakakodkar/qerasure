@@ -54,6 +54,7 @@ add_library(qerasure
     src/core/noise/noise_params.cpp
     src/core/sim/erasure_simulator.cpp
     src/core/simulator/erasure_sampler.cc
+    src/core/simulator/injector.cc
     src/core/lowering/lowering.cpp
     src/core/translation/common.cpp
     src/core/translation/surf_gen.cpp
@@ -106,6 +107,15 @@ add_executable(erasure_sampler_bench
 target_link_libraries(erasure_sampler_bench PRIVATE qerasure)
 target_include_directories(erasure_sampler_bench PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+add_executable(bench_stream_sampler
+    benchmarks/bench_stream_sampler.cpp
+    src/core/circuit/compile.cc
+    src/core/simulator/stream_sampler.cc
+    src/core/simulator/sim_internal_utils.cc
+)
+target_link_libraries(bench_stream_sampler PRIVATE qerasure qerasure_stim)
+target_include_directories(bench_stream_sampler PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(smoke_sim_test
@@ -137,6 +147,14 @@ if(BUILD_TESTING)
   target_link_libraries(surf_gen_test PRIVATE qerasure)
   target_include_directories(surf_gen_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
   add_test(NAME surf_gen_test COMMAND surf_gen_test)
+
+  add_executable(sampler_injector_trace_test
+      tests/sampler_injector_trace_test.cpp
+      src/core/circuit/compile.cc
+  )
+  target_link_libraries(sampler_injector_trace_test PRIVATE qerasure qerasure_stim)
+  target_include_directories(sampler_injector_trace_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  add_test(NAME sampler_injector_trace_test COMMAND sampler_injector_trace_test)
 endif()
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src/CMakeLists.txt")

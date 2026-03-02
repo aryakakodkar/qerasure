@@ -38,6 +38,10 @@ inline bool is_stim_op(OpCode op) {
     return op > OpCode::STIM_OPS && op != OpCode::STIM_PROB_OPS && op < OpCode::ERASURE_OPS;
 }
 
+inline bool is_measurement_op(OpCode op) {
+    return op == OpCode::M || op == OpCode::MR;
+}
+
 inline bool is_entangling_op(OpCode op) {
     return op == OpCode::CX;
 }
@@ -76,6 +80,10 @@ inline bool is_erasure_check_op(OpCode op) {
 
 inline bool is_erasure_reset_op(OpCode op) {
     return op == OpCode::ECR || op == OpCode::COND_ER;
+}
+
+inline bool is_erasure_skippable_op(OpCode op) {
+    return op == OpCode::X_ERROR || op == OpCode::Z_ERROR || op == OpCode::DEPOLARIZE1;
 }
 
 inline const std::unordered_map<std::string, OpCode>& opcode_map() {
