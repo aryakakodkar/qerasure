@@ -17,6 +17,12 @@ struct ErasureOnset {
     uint64_t prob_threshold;
 };
 
+struct ErasureOnsetPair {
+    uint32_t qubit_index1;
+    uint32_t qubit_index2;
+    uint64_t prob_threshold;
+};
+
 struct ErasureSpread {
     uint32_t aff_qubit_index; // index of qubit that can be affected by spread
     ThresholdedPauliChannel spread_channel;
@@ -38,6 +44,7 @@ struct ErasureReset {
 struct OperationGroup {
     std::optional<Instruction> stim_instruction;
     std::vector<ErasureOnset> onsets;
+    std::vector<ErasureOnsetPair> onset_pairs;
     std::vector<ErasureSpread> spreads;
     std::vector<ErasureCheck> checks;
     std::vector<ErasureReset> resets;
@@ -52,13 +59,17 @@ struct CompiledErasureProgram  {
     inline uint32_t max_qubit_index() const { return max_qubit_index_; }
     inline const std::vector<uint32_t>& erasable_qubits() const { return erasable_qubits_; }
     inline uint32_t max_persistence() const { return max_persistence_; }
+    inline const ThresholdedPauliChannel& thresholded_onset_channel() const { return thresholded_onset_; }
 
     void print_summary() const;
 
     private:
         uint32_t max_qubit_index_ = 0;
         uint32_t max_persistence_ = 0;
-        std::vector<uint32_t> erasable_qubits_;
+        std::vector<uint32_t> erasable_qubits_; // check if needed
+
+        // Stored as a reference; the caller must ensure the model outlives this object.
+        const ThresholdedPauliChannel thresholded_onset_;
 };
 
 }  // namespace qerasure::circuit

@@ -1,55 +1,31 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
-#include <exception>
 #include <iostream>
-#include <string>
-#include <vector>
 
-#include "core/circuit/circuit.h"
 #include "core/circuit/compile.h"
 #include "core/circuit/erasure_model.h"
+#include "core/gen/surf.h"
 #include "core/model/pauli_channel.h"
 #include "core/simulator/erasure_sampler.h"
 
-namespace {
-
-std::string resolve_circuit_path(int argc, char** argv) {
-  if (argc > 1) {
-    return argv[1];
-  }
-  // Running from repo root.
-  const std::string root_relative = "benchmarks/erasure_sampler_bench.circuit";
-  // Running from build directory.
-  const std::string build_relative = "../benchmarks/erasure_sampler_bench.circuit";
-
-  {
-    qerasure::circuit::ErasureCircuit probe;
-    try {
-      probe.from_file(root_relative);
-      return root_relative;
-    } catch (const std::exception&) {
-      // fall through
-    }
-  }
-  return build_relative;
-}
-
-}  // namespace
-
 int main(int argc, char** argv) {
-  using namespace qerasure::circuit;    // NOLINT
+  (void)argc;
+  (void)argv;
+
+  using namespace qerasure::circuit;  // NOLINT
+  using namespace qerasure::gen;      // NOLINT
   using namespace qerasure::simulator;  // NOLINT
 
-  const std::string circuit_path = resolve_circuit_path(argc, argv);
+  constexpr uint32_t kDistance = 15;
+  constexpr uint32_t kRounds = 15;
+  constexpr double kErasureProb = 0.01;
+  constexpr uint64_t kShots = 10'000;
+  constexpr uint64_t kSeed = 12345;
 
-  ErasureCircuit circuit;
-  try {
-    circuit.from_file(circuit_path);
-  } catch (const std::exception& ex) {
-    std::cerr << "Failed to load circuit file '" << circuit_path << "': " << ex.what() << "\n";
-    return EXIT_FAILURE;
-  }
+  SurfaceCodeRotated generator(kDistance);
+  const ErasureCircuit circuit =
+      generator.build_circuit(kRounds, kErasureProb, /*erasable_qubits=*/"ALL");
 
   ErasureModel model(
       /*max_persistence=*/3,
@@ -63,8 +39,8 @@ int main(int argc, char** argv) {
   ErasureSampler sampler(compiled);
 
   SamplerParams params{};
-  params.shots = 10'000;
-  params.seed = 12345;
+  params.shots = kShots;
+  params.seed = kSeed;
 
   const auto t0 = std::chrono::steady_clock::now();
   const SampledBatch batch = sampler.sample(params);
@@ -87,7 +63,9 @@ int main(int argc, char** argv) {
   const double shots_per_s = elapsed_s > 0.0 ? static_cast<double>(params.shots) / elapsed_s : 0.0;
 
   std::cout << "erasure_sampler_bench\n";
-  std::cout << "circuit_file: " << circuit_path << "\n";
+  std::cout << "distance: " << kDistance << "\n";
+  std::cout << "rounds: " << kRounds << "\n";
+  std::cout << "erasure_prob: " << kErasureProb << "\n";
   std::cout << "ops: " << compiled.operation_groups.size() << "\n";
   std::cout << "shots: " << params.shots << "\n";
   std::cout << "elapsed_s: " << elapsed_s << "\n";
