@@ -103,10 +103,21 @@ uint32_t parse_target_token(const std::string& token, std::size_t line_number) {
 ErasureCircuit::ErasureCircuit() {}
 
 void ErasureCircuit::validate_instruction_(OpCode op, const std::vector<uint32_t>& targets, double arg) {
+    if (targets.empty()) {
+        throw std::invalid_argument("All instructions must have at least one target.");
+    }
     if (is_probabilistic_op(op) && (arg < 0.0 || arg > 1.0)) {
         throw std::invalid_argument("Probability argument must be between 0 and 1.");
     } else if (!is_probabilistic_op(op) && arg != 0.0) {
         throw std::invalid_argument("Non-probabilistic operations should not have a non-zero argument.");
+    }
+    if (uses_measurement_record_targets(op)) {
+        for (const uint32_t lookback : targets) {
+            if (lookback == 0) {
+                throw std::invalid_argument(
+                    "DETECTOR/OBSERVABLE_INCLUDE targets must be positive rec lookbacks.");
+            }
+        }
     }
     if (is_two_qubit_op(op) && targets.size()%2 != 0)  {
         throw std::invalid_argument("Two-qubit operations require an even number of targets.");
@@ -127,6 +138,14 @@ void ErasureCircuit::safe_append(const std::string& op, const std::vector<uint32
     validate_instruction_(it->second, targets, arg);
 
     append(it->second, targets, arg);
+}
+
+void ErasureCircuit::append_detector(const std::vector<uint32_t>& rec_lookbacks) {
+    append(OpCode::DETECTOR, rec_lookbacks);
+}
+
+void ErasureCircuit::append_observable_include(const std::vector<uint32_t>& rec_lookbacks) {
+    append(OpCode::OBSERVABLE_INCLUDE, rec_lookbacks);
 }
 
 void ErasureCircuit::from_stream_(std::istream& stream) {
@@ -173,6 +192,29 @@ void ErasureCircuit::from_file(const std::string& filepath) {
         throw std::invalid_argument("Could not open file: " + filepath);
     }
     from_stream_(file);
+}
+
+std::string ErasureCircuit::to_string() const {
+    std::ostringstream out;
+    for (std::size_t i = 0; i < instructions_.size(); ++i) {
+        const Instruction& instr = instructions_[i];
+        out << opcode_name(instr.op);
+        if (is_probabilistic_op(instr.op)) {
+            out << "(" << instr.arg << ")";
+        }
+        for (const uint32_t target : instr.targets) {
+            out << " " << target;
+        }
+        if (i + 1 < instructions_.size()) {
+            out << "\n";
+        }
+    }
+    return out.str();
+}
+
+std::ostream& operator<<(std::ostream& out, const ErasureCircuit& circuit) {
+    out << circuit.to_string();
+    return out;
 }
 
 }  // namespace qerasure::circuit

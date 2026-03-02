@@ -40,17 +40,28 @@ namespace{
     }
 }
 
-CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, const ErasureModel& model) {
+CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, const ErasureModel& model)
+    : thresholded_onset_(model.onset) {
     operation_groups.resize(circuit.instructions().size());
 
     std::unordered_map<uint32_t, uint32_t> checks_survived; // maps erased qubit index to number of checks through which erasure has gone undetected
+    
+    // Pre-compute thresholded channels and probs
+    ThresholdedPauliChannel thresholded_onset(model.onset);
+    ThresholdedPauliChannel thresholded_reset(model.reset);
+    ThresholdedPauliChannel thresholded_control_spread(model.spread.control_spread);
+    ThresholdedPauliChannel thresholded_target_spread(model.spread.target_spread);
+    uint64_t check_false_negative_threshold = probability_to_threshold(model.check_false_negative_prob);
+    uint64_t check_false_positive_threshold = probability_to_threshold(model.check_false_positive_prob);
 
     max_persistence_ = model.max_persistence;
 
     uint32_t op_index = 0;
     for (const auto& instr : circuit.instructions()) {
         OperationGroup& group = operation_groups[op_index]; // group of operations for this timestep
-        check_max_qubit_index(instr.targets, max_qubit_index_);
+        if (!uses_measurement_record_targets(instr.op)) {
+            check_max_qubit_index(instr.targets, max_qubit_index_);
+        }
         if (is_stim_op(instr.op)) {
             group.stim_instruction = instr;
             if (is_entangling_op(instr.op)) {
@@ -58,10 +69,10 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     uint32_t control = instr.targets[i];
                     uint32_t target = instr.targets[i + 1];
                     if (checks_survived.find(control) != checks_survived.end()) {
-                        group.spreads.push_back({target, ThresholdedPauliChannel(model.spread.control_spread)});
+                        group.spreads.push_back({target, thresholded_control_spread});
                     }
                     if (checks_survived.find(target) != checks_survived.end()) {
-                        group.spreads.push_back({control, ThresholdedPauliChannel(model.spread.target_spread)});
+                        group.spreads.push_back({control, thresholded_target_spread});
                     }
                 }
             }
@@ -78,8 +89,18 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     uint32_t target2 = instr.targets[i + 1]; // affected by onset spread
                     group.onsets.push_back({target1, probability_to_threshold(instr.arg)});
                     erasable_qubits_.push_back(target1);
-                    group.spreads.push_back({target2, ThresholdedPauliChannel(model.onset)});
+                    group.spreads.push_back({target2, thresholded_onset});
                     checks_survived[target1] = 0;
+                }
+            } else if (instr.op == OpCode::ERASE2_ANY) {
+                for (size_t i = 0; i < instr.targets.size(); i += 2) {
+                    uint32_t target1 = instr.targets[i]; // to be erased
+                    uint32_t target2 = instr.targets[i + 1]; // affected by onset spread
+                    group.onset_pairs.push_back({target1, target2, probability_to_threshold(instr.arg)});
+                    erasable_qubits_.push_back(target1);
+                    erasable_qubits_.push_back(target2);
+                    checks_survived[target1] = 0;
+                    checks_survived[target2] = 0;
                 }
             }
         } else if (is_erasure_check_op(instr.op)) {
@@ -88,9 +109,7 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     continue;
                 }
                 checks_survived[target]++;
-                group.checks.push_back({target, probability_to_threshold(
-                    model.check_false_negative_prob), 
-                    probability_to_threshold(model.check_false_positive_prob)}); // false negative and false positive probs are set later
+                group.checks.push_back({target, check_false_negative_threshold, check_false_positive_threshold}); 
             }
         // Erasure and reset are not mutually exclusive (e.g. ECR), so both need to be processed if applicable
         } if (is_erasure_reset_op(instr.op)) {
@@ -100,11 +119,11 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     || checks_survived[target] == 0) {
                     continue;
                 } else if (checks_survived[target] >= max_persistence_) {
-                    group.resets.push_back({target, 0, ThresholdedPauliChannel(model.reset)}); // if max persistence exceeded, reset is guaranteed to succeed
+                    group.resets.push_back({target, 0, thresholded_reset}); // if max persistence exceeded, reset is guaranteed to succeed
                     checks_survived.erase(target);
                     continue;
                 }
-                group.resets.push_back({target, probability_to_threshold(instr.arg), ThresholdedPauliChannel(model.reset)});
+                group.resets.push_back({target, probability_to_threshold(instr.arg), thresholded_reset});
             }
         }
         group.op_num = group.onsets.size() + group.spreads.size() + group.checks.size() + group.resets.size();

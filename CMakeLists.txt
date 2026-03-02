@@ -49,6 +49,8 @@ endif()
 
 add_library(qerasure
     src/core/code/rotated_surface_code.cpp
+    src/core/circuit/circuit.cc
+    src/core/gen/surf.cc
     src/core/noise/noise_params.cpp
     src/core/sim/erasure_simulator.cpp
     src/core/simulator/erasure_sampler.cc
@@ -128,6 +130,13 @@ if(BUILD_TESTING)
   )
   target_link_libraries(stim_translation_test PRIVATE qerasure)
   add_test(NAME stim_translation_test COMMAND stim_translation_test)
+
+  add_executable(surf_gen_test
+      tests/surf_gen_test.cpp
+  )
+  target_link_libraries(surf_gen_test PRIVATE qerasure)
+  target_include_directories(surf_gen_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  add_test(NAME surf_gen_test COMMAND surf_gen_test)
 endif()
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src/CMakeLists.txt")

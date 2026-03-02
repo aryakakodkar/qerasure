@@ -32,6 +32,7 @@ PauliOperation sample_thresholded_pauli_channel(const ThresholdedPauliChannel& c
 
 }  // namespace
 
+// TODO: Add Stim instruction parsing to remove error ops on non-erased qubits
 SampledBatch ErasureSampler::sample(const SamplerParams& params) {
     SampledBatch batch;
     batch.shots.reserve(params.shots);
@@ -67,8 +68,35 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
 
             for (const auto& onset : op_group.onsets) {
                 if (rng_.next_u64() <= onset.prob_threshold) {
-                    current_erasure_state[onset.qubit_index] = current_erasure_state[onset.qubit_index] == 0 ? 1 : current_erasure_state[onset.qubit_index] + 1; // if not already erased, mark as erased
+                    current_erasure_state[onset.qubit_index] = current_erasure_state[onset.qubit_index] == 0 
+                        ? 1 : current_erasure_state[onset.qubit_index] + 1; // if not already erased, mark as erased
                     group.onsets.push_back({onset.qubit_index});
+                }
+            }
+
+            for (const auto& onset_pair : op_group.onset_pairs) {
+                if (rng_.next_u64() <= onset_pair.prob_threshold) {
+                    // If either qubit is already erased, skip operation
+                    if (current_erasure_state[onset_pair.qubit_index1] != 0 ||
+                        current_erasure_state[onset_pair.qubit_index2] != 0) {
+                        continue;
+                    }
+                    uint32_t unerased;
+                    if (rng_.next_u64() <= (1ULL << 63)) { // coin-flip for which qubit gets erased
+                        current_erasure_state[onset_pair.qubit_index1] = 1;
+                        group.onsets.push_back({onset_pair.qubit_index1});
+                        unerased = onset_pair.qubit_index2;
+                    } else {
+                        current_erasure_state[onset_pair.qubit_index2] = 1;
+                        group.onsets.push_back({onset_pair.qubit_index2});
+                        unerased = onset_pair.qubit_index1;
+                    }
+
+                    // Sample spread on unerased qubit
+                    PauliOperation sampled_op = sample_thresholded_pauli_channel(program_.thresholded_onset_channel(), &rng_);
+                    if (sampled_op != PauliOperation::I) {
+                        group.spreads.push_back({unerased, sampled_op});
+                    }
                 }
             }
 

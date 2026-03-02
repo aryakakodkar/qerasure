@@ -1,0 +1,46 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/CMakeFiles/stim-populate"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/CMakeFiles/stim-populate.rule"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/CMakeFiles/stim-populate-complete.rule"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/stim-populate-prefix/src/stim-populate-stamp/stim-populate-build.rule"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/stim-populate-prefix/src/stim-populate-stamp/stim-populate-configure.rule"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/stim-populate-prefix/src/stim-populate-stamp/stim-populate-download.rule"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/stim-populate-prefix/src/stim-populate-stamp/stim-populate-install.rule"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/stim-populate-prefix/src/stim-populate-stamp/stim-populate-mkdir.rule"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/stim-populate-prefix/src/stim-populate-stamp/stim-populate-patch.rule"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/stim-populate-prefix/src/stim-populate-stamp/stim-populate-test.rule"
+		},
+		{
+			"file" : "/Users/aryakakodkar/Documents/qerasure/build-codex/_deps/stim-subbuild/stim-populate-prefix/src/stim-populate-stamp/stim-populate-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"stim-populate"
+		],
+		"name" : "stim-populate"
+	}
+}

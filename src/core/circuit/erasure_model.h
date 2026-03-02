@@ -32,6 +32,7 @@ struct ErasureModel {
     double check_false_negative_prob = 0.0;
     double check_false_positive_prob = 0.0;
 
+    // Primary constructor. Use when you have a TQGSpreadModel or no spread at all.
     ErasureModel(uint32_t max_persistence = UINT32_MAX, 
                  const PauliChannel& onset = {}, 
                  const PauliChannel& reset = {}, 
@@ -40,19 +41,21 @@ struct ErasureModel {
             validate_max_persistence(max_persistence);
         }
 
-    ErasureModel(uint32_t max_persistence = UINT32_MAX, 
-                 const PauliChannel& onset = {}, 
-                 const PauliChannel& reset = {},
-                 const PauliChannel& control_spread = {}, 
-                 const PauliChannel& target_spread = {})
+    // Convenience constructor for asymmetric control/target spread channels.
+    ErasureModel(uint32_t max_persistence, 
+                 const PauliChannel& onset, 
+                 const PauliChannel& reset,
+                 const PauliChannel& control_spread, 
+                 const PauliChannel& target_spread)
         : max_persistence(max_persistence), onset(onset), reset(reset), spread(TQGSpreadModel{control_spread, target_spread}) {
             validate_max_persistence(max_persistence);
         }
 
-    ErasureModel(uint32_t max_persistence = UINT32_MAX,
-                 const PauliChannel& onset = {}, 
-                 const PauliChannel& reset = {}, 
-                 const PauliChannel& cx_spread = {})
+    // Convenience constructor for a symmetric spread channel (same for control and target).
+    ErasureModel(uint32_t max_persistence,
+                 const PauliChannel& onset, 
+                 const PauliChannel& reset, 
+                 const PauliChannel& cx_spread)
         : max_persistence(max_persistence), onset(onset), reset(reset), spread(TQGSpreadModel{cx_spread, cx_spread}) {
             validate_max_persistence(max_persistence);
         }
