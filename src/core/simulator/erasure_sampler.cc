@@ -1,7 +1,8 @@
 #include <cstdint>
-#include <optional>
 #include <algorithm>
-#include <unordered_map>
+#include <optional>
+#include <sstream>
+#include <string>
 
 #include "core/model/pauli_channel.h"
 #include "core/simulator/fast_rng.h"
@@ -30,7 +31,104 @@ PauliOperation sample_thresholded_pauli_channel(const ThresholdedPauliChannel& c
     return PauliOperation::I;
 }
 
+const char* pauli_operation_name(PauliOperation op) {
+    switch (op) {
+        case PauliOperation::X:
+            return "X";
+        case PauliOperation::Y:
+            return "Y";
+        case PauliOperation::Z:
+            return "Z";
+        case PauliOperation::I:
+            return "I";
+    }
+    return "UNKNOWN";
+}
+
+const char* check_outcome_name(CheckOutcome outcome) {
+    switch (outcome) {
+        case CheckOutcome::TruePositive:
+            return "TruePositive";
+        case CheckOutcome::FalseNegative:
+            return "FalseNegative";
+        case CheckOutcome::FalsePositive:
+            return "FalsePositive";
+        case CheckOutcome::TrueNegative:
+            return "TrueNegative";
+    }
+    return "UNKNOWN";
+}
+
+void append_instruction_summary(std::ostringstream* out, const circuit::Instruction& instr) {
+    *out << "Stim Instruction: " << circuit::opcode_name(instr.op);
+    if (circuit::is_probabilistic_op(instr.op)) {
+        *out << "(" << instr.arg << ")";
+    }
+    for (const uint32_t target : instr.targets) {
+        *out << " " << target;
+    }
+    *out << "\n";
+}
+
 }  // namespace
+
+std::string SampledShot::to_string() const {
+    std::ostringstream out;
+    for (size_t op_index = 0; op_index < operation_groups.size(); ++op_index) {
+        const SampledOperationGroup& group = operation_groups[op_index];
+        out << "=== OP NUM (" << op_index << ") ===\n";
+
+        if (group.stim_instruction.has_value()) {
+            append_instruction_summary(&out, group.stim_instruction.value());
+        } else {
+            out << "Stim Instruction: (none)\n";
+        }
+
+        out << "Onsets:\n";
+        if (group.onsets.empty()) {
+            out << "  (none)\n";
+        } else {
+            for (const SampledOnset& onset : group.onsets) {
+                out << "  q=" << onset.qubit_index << "\n";
+            }
+        }
+
+        out << "Spreads:\n";
+        if (group.spreads.empty()) {
+            out << "  (none)\n";
+        } else {
+            for (const SampledSpread& spread : group.spreads) {
+                out << "  q=" << spread.qubit_index
+                    << ", op=" << pauli_operation_name(spread.operation) << "\n";
+            }
+        }
+
+        out << "Checks:\n";
+        if (group.checks.empty()) {
+            out << "  (none)\n";
+        } else {
+            for (const SampledCheck& check : group.checks) {
+                out << "  q=" << check.qubit_index
+                    << ", outcome=" << check_outcome_name(check.outcome) << "\n";
+            }
+        }
+
+        out << "Resets:\n";
+        if (group.resets.empty()) {
+            out << "  (none)\n";
+        } else {
+            for (const SampledReset& reset : group.resets) {
+                out << "  q=" << reset.qubit_index
+                    << ", op=" << pauli_operation_name(reset.operation) << "\n";
+            }
+        }
+
+        if (op_index + 1 < operation_groups.size()) {
+            out << "\n";
+        }
+    }
+    return out.str();
+}
 
 // TODO: Add Stim instruction parsing to remove error ops on non-erased qubits
 SampledBatch ErasureSampler::sample(const SamplerParams& params) {
@@ -47,9 +145,9 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
 
     // Current erasure state holds the check survival count as well
     // 0: unerased, 1: newly erased, n (1 < n): erased and survived n-1 checks
-    std::vector<uint64_t> current_erasure_state(program_.max_qubit_index(), 0);
+    std::vector<uint64_t> current_erasure_state(program_.max_qubit_index() + 1, 0);
     
-    std::vector<uint8_t> last_check_result(program_.max_qubit_index(), 0); // 0: no check or negative, 1: positive
+    std::vector<uint8_t> last_check_result(program_.max_qubit_index() + 1, 0); // 0: no check or negative, 1: positive
 
     for (std::uint64_t shot_idx = 0; shot_idx < params.shots; ++shot_idx) {
         SampledShot shot;
@@ -60,6 +158,10 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
         for (size_t op_index = 0; op_index < num_ops; ++op_index) {
             const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
             SampledOperationGroup& group = shot.operation_groups[op_index];
+
+            if (op_group.stim_instruction.has_value()) {
+                group.stim_instruction = op_group.stim_instruction;
+            }
 
             group.onsets.reserve(op_group.onsets.size());
             group.spreads.reserve(op_group.spreads.size());
@@ -101,7 +203,7 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
             }
 
             for (const auto& spread : op_group.spreads) {
-                if (current_erasure_state[spread.aff_qubit_index] != 0) { // only sample spread if affected qubit is erased
+                if (current_erasure_state[spread.aff_qubit_index] != 0 || current_erasure_state[spread.source_qubit_index] == 0) { // only sample spread if affected qubit is erased and source qubit is erased
                     continue;
                 }
                 PauliOperation sampled_op = sample_thresholded_pauli_channel(spread.spread_channel, &rng_);
