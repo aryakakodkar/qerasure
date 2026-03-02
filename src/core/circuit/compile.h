@@ -11,26 +11,27 @@
 
 namespace qerasure::circuit {
 
+// Using precomputed threshold for probability sampling
 struct ErasureOnset {
     uint32_t qubit_index;
-    double probability;
+    uint64_t prob_threshold;
 };
 
 struct ErasureSpread {
     uint32_t aff_qubit_index; // index of qubit that can be affected by spread
-    PauliChannel spread_channel;
+    ThresholdedPauliChannel spread_channel;
 };
 
 struct ErasureCheck {
     uint32_t qubit_index;
-    double false_negative_prob;
-    double false_positive_prob;
+    uint64_t false_negative_threshold; 
+    uint64_t false_positive_threshold;
 };
 
 struct ErasureReset {
     uint32_t qubit_index;
-    double reset_failure_prob;
-    PauliChannel reset_channel;
+    uint64_t reset_failure_threshold; 
+    ThresholdedPauliChannel reset_channel;
 };
 
 // Group operations by time for cheap sampling at runtime
@@ -40,6 +41,7 @@ struct OperationGroup {
     std::vector<ErasureSpread> spreads;
     std::vector<ErasureCheck> checks;
     std::vector<ErasureReset> resets;
+    uint32_t op_num = 0; // number of operations in this group, used for vector resizing when sampling
 };
 
 struct CompiledErasureProgram  {
@@ -47,7 +49,16 @@ struct CompiledErasureProgram  {
 
     std::vector<OperationGroup> operation_groups;
 
+    inline uint32_t max_qubit_index() const { return max_qubit_index_; }
+    inline const std::vector<uint32_t>& erasable_qubits() const { return erasable_qubits_; }
+    inline uint32_t max_persistence() const { return max_persistence_; }
+
     void print_summary() const;
+
+    private:
+        uint32_t max_qubit_index_ = 0;
+        uint32_t max_persistence_ = 0;
+        std::vector<uint32_t> erasable_qubits_;
 };
 
 }  // namespace qerasure::circuit
