@@ -51,6 +51,7 @@ add_library(qerasure
     src/core/code/rotated_surface_code.cpp
     src/core/noise/noise_params.cpp
     src/core/sim/erasure_simulator.cpp
+    src/core/simulator/erasure_sampler.cc
     src/core/lowering/lowering.cpp
     src/core/translation/common.cpp
     src/core/translation/surf_gen.cpp
@@ -63,6 +64,8 @@ target_compile_features(qerasure PUBLIC cxx_std_20)
 target_include_directories(qerasure
     PUBLIC
         ${CMAKE_SOURCE_DIR}/include
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
 )
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/apps/run_sim.cpp")
