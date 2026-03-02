@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <thread>
 
 #include "core/circuit/compile.h"
 #include "core/circuit/erasure_model.h"
@@ -9,7 +10,7 @@
 #include "core/model/pauli_channel.h"
 #include "core/simulator/stream_sampler.h"
 
-int main() {
+int main(int argc, char** argv) {
   using namespace qerasure::circuit;    // NOLINT
   using namespace qerasure::gen;        // NOLINT
   using namespace qerasure::simulator;  // NOLINT
@@ -19,6 +20,13 @@ int main() {
   constexpr double kErasureProb = 0.01;
   constexpr uint32_t kShots = 10'000;
   constexpr uint32_t kSeed = 12345;
+  uint32_t threads = std::thread::hardware_concurrency();
+  if (threads == 0) {
+    threads = 1;
+  }
+  if (argc > 1) {
+    threads = static_cast<uint32_t>(std::strtoul(argv[1], nullptr, 10));
+  }
 
   SurfaceCodeRotated generator(kDistance);
   const ErasureCircuit erasure_circuit =
@@ -40,7 +48,8 @@ int main() {
       kShots, kSeed,
       [](const stim::Circuit&, const std::vector<uint8_t>&) {
         // Intentionally empty callback for pure sampling+injection throughput measurement.
-      });
+      },
+      threads);
   const auto t1 = std::chrono::steady_clock::now();
 
   const double elapsed_s = std::chrono::duration<double>(t1 - t0).count();
@@ -51,6 +60,7 @@ int main() {
   std::cout << "rounds: " << kRounds << "\n";
   std::cout << "erasure_prob: " << kErasureProb << "\n";
   std::cout << "shots: " << kShots << "\n";
+  std::cout << "threads: " << threads << "\n";
   std::cout << "elapsed_s: " << elapsed_s << "\n";
   std::cout << "shots_per_s: " << shots_per_s << "\n";
 
