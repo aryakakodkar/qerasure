@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -14,7 +16,8 @@ class StreamSampler {
         // Callback for shot processing (e.g. sample + decode)
         void sample(uint32_t num_shots,
                     uint32_t seed,
-                    std::function<void(const stim::Circuit&, const std::vector<uint8_t>&)> callback);
+                    std::function<void(const stim::Circuit&, const std::vector<uint8_t>&)> callback,
+                    uint32_t num_threads = 1);
 
     private:
         const circuit::CompiledErasureProgram& program_;
