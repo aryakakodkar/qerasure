@@ -96,6 +96,14 @@ add_executable(bench_stim_translation
 )
 target_link_libraries(bench_stim_translation PRIVATE qerasure qerasure_stim)
 
+add_executable(erasure_sampler_bench
+    benchmarks/erasure_sampler_bench.cpp
+    src/core/circuit/circuit.cc
+    src/core/circuit/compile.cc
+)
+target_link_libraries(erasure_sampler_bench PRIVATE qerasure)
+target_include_directories(erasure_sampler_bench PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(smoke_sim_test

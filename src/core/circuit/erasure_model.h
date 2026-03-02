@@ -32,7 +32,7 @@ struct ErasureModel {
     double check_false_negative_prob = 0.0;
     double check_false_positive_prob = 0.0;
 
-    ErasureModel(uint32_t max_persistence = 0, 
+    ErasureModel(uint32_t max_persistence = UINT32_MAX, 
                  const PauliChannel& onset = {}, 
                  const PauliChannel& reset = {}, 
                  const TQGSpreadModel& spread = {})
@@ -40,7 +40,7 @@ struct ErasureModel {
             validate_max_persistence(max_persistence);
         }
 
-    ErasureModel(uint32_t max_persistence = 0, 
+    ErasureModel(uint32_t max_persistence = UINT32_MAX, 
                  const PauliChannel& onset = {}, 
                  const PauliChannel& reset = {},
                  const PauliChannel& control_spread = {}, 
