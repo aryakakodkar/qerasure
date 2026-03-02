@@ -53,6 +53,7 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
     for (std::uint64_t shot_idx = 0; shot_idx < params.shots; ++shot_idx) {
         SampledShot shot;
         std::fill(current_erasure_state.begin(), current_erasure_state.end(), 0); // reset erasure state for new shot
+        std::fill(last_check_result.begin(), last_check_result.end(), 0); // reset last check results for new shot
         shot.operation_groups.resize(num_ops);
 
         for (size_t op_index = 0; op_index < num_ops; ++op_index) {
@@ -72,7 +73,7 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
             }
 
             for (const auto& spread : op_group.spreads) {
-                if (current_erasure_state[spread.aff_qubit_index] != 0) { // only sampled spread if affected qubit is not erased
+                if (current_erasure_state[spread.aff_qubit_index] != 0) { // only sample spread if affected qubit is erased
                     continue;
                 }
                 PauliOperation sampled_op = sample_thresholded_pauli_channel(spread.spread_channel, &rng_);
