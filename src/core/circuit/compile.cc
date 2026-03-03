@@ -38,6 +38,15 @@ namespace{
             }
         }
     }
+
+    void append_unique_op_index(std::vector<std::vector<uint32_t>>* per_qubit_indices,
+                                uint32_t qubit,
+                                uint32_t op_index) {
+        std::vector<uint32_t>& indices = (*per_qubit_indices)[qubit];
+        if (indices.empty() || indices.back() != op_index) {
+            indices.push_back(op_index);
+        }
+    }
 }
 
 CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, const ErasureModel& model)
@@ -55,16 +64,38 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
     uint64_t check_false_positive_threshold = probability_to_threshold(model.check_false_positive_prob);
 
     max_persistence_ = model.max_persistence;
+
+    // Pre-scan once to size thin per-qubit index layers.
+    for (const auto& instr : circuit.instructions()) {
+        if (!uses_measurement_record_targets(instr.op)) {
+            check_max_qubit_index(instr.targets, max_qubit_index_);
+        }
+    }
+    qubit_operation_indices.resize(max_qubit_index_ + 1);
+    qubit_check_operation_indices.resize(max_qubit_index_ + 1);
+    qubit_reset_operation_indices.resize(max_qubit_index_ + 1);
     
     // TODO: Need to check if qubits that might be erased are involved in ERROR ops or MEASUREMENTS
     uint32_t op_index = 0;
     for (const auto& instr : circuit.instructions()) {
         OperationGroup& group = operation_groups[op_index]; // group of operations for this timestep
-        if (!uses_measurement_record_targets(instr.op)) {
-            check_max_qubit_index(instr.targets, max_qubit_index_);
-        }
+        const auto mark_qubit_operation = [&](uint32_t qubit) {
+            append_unique_op_index(&qubit_operation_indices, qubit, op_index);
+        };
+        const auto mark_qubit_check = [&](uint32_t qubit) {
+            append_unique_op_index(&qubit_check_operation_indices, qubit, op_index);
+        };
+        const auto mark_qubit_reset = [&](uint32_t qubit) {
+            append_unique_op_index(&qubit_reset_operation_indices, qubit, op_index);
+        };
+
         if (is_stim_op(instr.op)) {
             group.stim_instruction = instr;
+            if (!uses_measurement_record_targets(instr.op)) {
+                for (const auto& target : instr.targets) {
+                    mark_qubit_operation(target);
+                }
+            }
             if (is_entangling_op(instr.op)) {
                 for (size_t i = 0; i < instr.targets.size(); i += 2) {
                     uint32_t control = instr.targets[i];
@@ -82,6 +113,7 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                 group.onsets.push_back({target, probability_to_threshold(instr.arg)});
                 erasable_qubits_.push_back(target);
                 checks_survived[target] = 0;
+                mark_qubit_operation(target);
             }
         } else if (is_multi_onset_op(instr.op)) {
             if (instr.op == OpCode::ERASE2) {
@@ -92,6 +124,8 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     erasable_qubits_.push_back(target1);
                     group.spreads.push_back({target1, target2, thresholded_onset});
                     checks_survived[target1] = 0;
+                    mark_qubit_operation(target1);
+                    mark_qubit_operation(target2);
                 }
             } else if (instr.op == OpCode::ERASE2_ANY) {
                 for (size_t i = 0; i < instr.targets.size(); i += 2) {
@@ -102,6 +136,8 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     erasable_qubits_.push_back(target2);
                     checks_survived[target1] = 0;
                     checks_survived[target2] = 0;
+                    mark_qubit_operation(target1);
+                    mark_qubit_operation(target2);
                 }
             }
         } else if (is_erasure_check_op(instr.op)) {
@@ -112,6 +148,8 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                 checks_survived[target]++;
                 group.checks.push_back({target, check_false_negative_threshold, check_false_positive_threshold});
                 num_checks_++;
+                mark_qubit_operation(target);
+                mark_qubit_check(target);
             }
         // Erasure and reset are not mutually exclusive (e.g. ECR), so both need to be processed if applicable
         } if (is_erasure_reset_op(instr.op)) {
@@ -123,9 +161,13 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                 } else if (checks_survived[target] >= max_persistence_) {
                     group.resets.push_back({target, 0, thresholded_reset}); // if max persistence exceeded, reset is guaranteed to succeed
                     checks_survived.erase(target);
+                    mark_qubit_operation(target);
+                    mark_qubit_reset(target);
                     continue;
                 }
                 group.resets.push_back({target, probability_to_threshold(instr.arg), thresholded_reset});
+                mark_qubit_operation(target);
+                mark_qubit_reset(target);
             }
         }
         group.op_num = group.onsets.size() + group.spreads.size() + group.checks.size() + group.resets.size();
