@@ -50,6 +50,7 @@ endif()
 add_library(qerasure
     src/core/code/rotated_surface_code.cpp
     src/core/circuit/circuit.cc
+    src/core/decode/hmm_decoder.cc
     src/core/gen/surf.cc
     src/core/noise/noise_params.cpp
     src/core/sim/erasure_simulator.cpp
