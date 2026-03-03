@@ -1,9 +1,14 @@
-build/*
+build/
+build-*/
+build*/
 __pycache__/
 **/__pycache__/
 *.pyc
+*.pyo
 AGENTS.md
 codex_reports/*
 build-release/*
 apps/results/
 .vscode/
+.venv/
+* 2.*

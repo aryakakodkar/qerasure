@@ -1,3 +1,0 @@
-/Users/aryakakodkar/Documents/qerasure/build-bench-native/_deps/stim-subbuild/CMakeFiles/stim-populate.dir
-/Users/aryakakodkar/Documents/qerasure/build-bench-native/_deps/stim-subbuild/CMakeFiles/edit_cache.dir
-/Users/aryakakodkar/Documents/qerasure/build-bench-native/_deps/stim-subbuild/CMakeFiles/rebuild_cache.dir
