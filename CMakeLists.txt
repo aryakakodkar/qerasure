@@ -55,6 +55,7 @@ add_library(qerasure
     src/core/sim/erasure_simulator.cpp
     src/core/simulator/erasure_sampler.cc
     src/core/simulator/injector.cc
+    src/core/simulator/sim_internal_utils.cc
     src/core/lowering/lowering.cpp
     src/core/translation/common.cpp
     src/core/translation/surf_gen.cpp

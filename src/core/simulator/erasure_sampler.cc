@@ -8,25 +8,22 @@
 #include "core/simulator/fast_rng.h"
 #include "core/simulator/erasure_sampler.h"
 #include "core/circuit/compile.h"
+#include "core/simulator/sim_internal_utils.h"
 
 namespace qerasure::simulator {
 
 namespace {
 
-PauliOperation sample_thresholded_pauli_channel(const ThresholdedPauliChannel& channel,
-                                 qerasure::simulator::FastRng* rng) {
-    const std::uint64_t draw = rng->next_u64();
-    const std::uint64_t x_cut = channel.p_x_threshold;
-    const std::uint64_t y_cut = x_cut + channel.p_y_threshold;
-    const std::uint64_t z_cut = y_cut + channel.p_z_threshold;
-    if (draw < x_cut) {
-        return PauliOperation::X;
-    }
-    if (draw < y_cut) {
-        return PauliOperation::Y;
-    }
-    if (draw < z_cut) {
-        return PauliOperation::Z;
+PauliOperation from_internal_pauli_operation(internal::PauliOperation op) {
+    switch (op) {
+        case internal::PauliOperation::X:
+            return PauliOperation::X;
+        case internal::PauliOperation::Y:
+            return PauliOperation::Y;
+        case internal::PauliOperation::Z:
+            return PauliOperation::Z;
+        case internal::PauliOperation::I:
+            return PauliOperation::I;
     }
     return PauliOperation::I;
 }
@@ -195,7 +192,8 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
                     }
 
                     // Sample spread on unerased qubit
-                    PauliOperation sampled_op = sample_thresholded_pauli_channel(program_.thresholded_onset_channel(), &rng_);
+                    PauliOperation sampled_op = from_internal_pauli_operation(
+                        internal::sample_thresholded_pauli_channel(program_.thresholded_onset_channel(), &rng_));
                     if (sampled_op != PauliOperation::I) {
                         group.spreads.push_back({unerased, sampled_op});
                     }
@@ -206,7 +204,8 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
                 if (current_erasure_state[spread.aff_qubit_index] != 0 || current_erasure_state[spread.source_qubit_index] == 0) { // only sample spread if affected qubit is erased and source qubit is erased
                     continue;
                 }
-                PauliOperation sampled_op = sample_thresholded_pauli_channel(spread.spread_channel, &rng_);
+                PauliOperation sampled_op = from_internal_pauli_operation(
+                    internal::sample_thresholded_pauli_channel(spread.spread_channel, &rng_));
                 if (sampled_op != PauliOperation::I) {
                     group.spreads.push_back({spread.aff_qubit_index, sampled_op});
                 }
@@ -239,7 +238,8 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
                 // Checks if current state is greater than max persistence + 1 because this means that the qubit has survived more than
                 // max_persistence checks, so it must be reset
                 if (current_erasure_state[reset.qubit_index] > max_persistence + 1 || (last_check_result[reset.qubit_index] == 1 && rng_.next_u64() <= reset.reset_failure_threshold)) {
-                    PauliOperation sampled_op = sample_thresholded_pauli_channel(reset.reset_channel, &rng_);
+                    PauliOperation sampled_op = from_internal_pauli_operation(
+                        internal::sample_thresholded_pauli_channel(reset.reset_channel, &rng_));
                     group.resets.push_back({reset.qubit_index, sampled_op});
                     current_erasure_state[reset.qubit_index] = 0; // reset successful, mark qubit as unerased
                     last_check_result[reset.qubit_index] = 0; // reset last check result
