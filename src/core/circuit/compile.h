@@ -56,6 +56,11 @@ struct CompiledErasureProgram  {
     CompiledErasureProgram(const ErasureCircuit& circuit, const ErasureModel& model);
 
     std::vector<OperationGroup> operation_groups;
+    // Thin per-qubit index layers into `operation_groups` (no duplicated payloads).
+    // For qubit q, entries are sorted and unique operation indices.
+    std::vector<std::vector<uint32_t>> qubit_operation_indices;
+    std::vector<std::vector<uint32_t>> qubit_check_operation_indices;
+    std::vector<std::vector<uint32_t>> qubit_reset_operation_indices;
 
     inline uint32_t max_qubit_index() const { return max_qubit_index_; }
     inline uint32_t num_checks() const { return num_checks_; }
