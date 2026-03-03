@@ -113,29 +113,34 @@ void sample_one_shot(const circuit::CompiledErasureProgram& program,
                     (*last_check_result)[check.qubit_index] = 0;
                 }
             } else {
-                bool false_negative = rng->next_u64() <= check.false_negative_threshold;
-                (*check_results)[check_idx++] = false_negative;
-                if (false_negative) {
-                    (*current_erasure_state)[check.qubit_index]++;
-                    (*last_check_result)[check.qubit_index] = 0;
-                } else {
+                const bool force_true_positive =
+                    (*current_erasure_state)[check.qubit_index] >= max_persistence;
+                if (force_true_positive) {
+                    (*check_results)[check_idx++] = 0;
                     (*last_check_result)[check.qubit_index] = 1;
+                } else {
+                    bool false_negative = rng->next_u64() <= check.false_negative_threshold;
+                    (*check_results)[check_idx++] = false_negative;
+                    if (false_negative) {
+                        (*current_erasure_state)[check.qubit_index]++;
+                        (*last_check_result)[check.qubit_index] = 0;
+                    } else {
+                        (*last_check_result)[check.qubit_index] = 1;
+                    }
                 }
             }
         }
 
         for (const auto& reset : op_group.resets) {
-            // TODO: Need to check if reset is conditional on check outcome. For now, all resets are conditional on successful checks.
-            // Checks if current state is greater than max persistence + 1 because this means that the qubit has survived more than
-            // max_persistence checks, so it must be reset
-            if ((*current_erasure_state)[reset.qubit_index] > max_persistence + 1 ||
-                ((*last_check_result)[reset.qubit_index] == 1 &&
-                 rng->next_u64() <= reset.reset_failure_threshold)) {
-                internal::PauliOperation sampled_op =
-                    internal::sample_thresholded_pauli_channel(reset.reset_channel, rng);
-                internal::append_mapped_pauli_operation(reset.qubit_index, sampled_op, &circuit);
-                (*current_erasure_state)[reset.qubit_index] = 0;  // reset successful, mark qubit as unerased
-                (*last_check_result)[reset.qubit_index] = 0;      // reset last check result
+            // Reset is driven only by the most recent check outcome.
+            if ((*last_check_result)[reset.qubit_index] == 1) {
+                if (rng->next_u64() <= reset.reset_failure_threshold) {
+                    internal::PauliOperation sampled_op =
+                        internal::sample_thresholded_pauli_channel(reset.reset_channel, rng);
+                    internal::append_mapped_pauli_operation(reset.qubit_index, sampled_op, &circuit);
+                }
+                (*current_erasure_state)[reset.qubit_index] = 0;  // reset performed, mark qubit as unerased
+                (*last_check_result)[reset.qubit_index] = 0;      // clear most recent check outcome after reset
             }
         }
     }

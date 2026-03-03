@@ -133,9 +133,8 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
     batch.shots.reserve(params.shots);
     size_t num_ops = program_.operation_groups.size();
 
-    // Shift to uint64_t representation of max persistence for conditional check functionality
-    // If a check flags a positive, it will change the current erasure state to max_persistence + 1
-    // so that the next reset is certainly applied
+    // Shift to uint64_t representation of max persistence for conditional check functionality.
+    // Once a qubit reaches this check-survival count, the next check is forced true-positive.
     uint64_t max_persistence = static_cast<uint64_t>(program_.max_persistence());
 
     FastRng rng_(params.seed);
@@ -222,28 +221,37 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
                         last_check_result[check.qubit_index] = 0;
                     }
                 } else {    
-                    bool false_negative = rng_.next_u64() <= check.false_negative_threshold;
-                    group.checks.push_back({check.qubit_index, false_negative ? CheckOutcome::FalseNegative : CheckOutcome::TruePositive});
-                    if (false_negative) {
-                        current_erasure_state[check.qubit_index]++;
-                        last_check_result[check.qubit_index] = 0;
-                    } else {
+                    const bool force_true_positive =
+                        current_erasure_state[check.qubit_index] >= max_persistence;
+                    if (force_true_positive) {
+                        group.checks.push_back({check.qubit_index, CheckOutcome::TruePositive});
                         last_check_result[check.qubit_index] = 1;
+                    } else {
+                        bool false_negative = rng_.next_u64() <= check.false_negative_threshold;
+                        group.checks.push_back({check.qubit_index, false_negative ? CheckOutcome::FalseNegative : CheckOutcome::TruePositive});
+                        if (false_negative) {
+                            current_erasure_state[check.qubit_index]++;
+                            last_check_result[check.qubit_index] = 0;
+                        } else {
+                            last_check_result[check.qubit_index] = 1;
+                        }
                     }
                 }
             }
 
             for (const auto& reset : op_group.resets) {
-                // TODO: Need to check if reset is conditional on check outcome. For now, all resets are conditional on successful checks.
-                // Checks if current state is greater than max persistence + 1 because this means that the qubit has survived more than
-                // max_persistence checks, so it must be reset
-                if (current_erasure_state[reset.qubit_index] > max_persistence + 1 || (last_check_result[reset.qubit_index] == 1 && rng_.next_u64() <= reset.reset_failure_threshold)) {
-                    PauliOperation sampled_op = from_internal_pauli_operation(
+                // Reset is driven only by the most recent check outcome.
+                if (last_check_result[reset.qubit_index] == 0) {
+                    continue;
+                }
+                PauliOperation sampled_op = PauliOperation::I;
+                if (rng_.next_u64() <= reset.reset_failure_threshold) {
+                    sampled_op = from_internal_pauli_operation(
                         internal::sample_thresholded_pauli_channel(reset.reset_channel, &rng_));
-                    group.resets.push_back({reset.qubit_index, sampled_op});
-                    current_erasure_state[reset.qubit_index] = 0; // reset successful, mark qubit as unerased
-                    last_check_result[reset.qubit_index] = 0; // reset last check result
-                } 
+                }
+                group.resets.push_back({reset.qubit_index, sampled_op});
+                current_erasure_state[reset.qubit_index] = 0; // reset performed, mark qubit as unerased
+                last_check_result[reset.qubit_index] = 0; // clear most recent check outcome after reset
             }
         }
         batch.shots.push_back(std::move(shot));
