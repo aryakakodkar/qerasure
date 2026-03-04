@@ -14,6 +14,7 @@ class StreamSampler {
         StreamSampler(const circuit::CompiledErasureProgram& program) : program_(program) {};
 
         // Callback for shot processing (e.g. sample + decode)
+        // In multi-thread mode, callback may run concurrently on multiple threads.
         void sample(uint32_t num_shots,
                     uint32_t seed,
                     std::function<void(const stim::Circuit&, const std::vector<uint8_t>&)> callback,

@@ -50,7 +50,7 @@ endif()
 add_library(qerasure
     src/core/code/rotated_surface_code.cpp
     src/core/circuit/circuit.cc
-    src/core/decode/hmm_decoder.cc
+    src/core/decode/surf_hmm_decoder.cc
     src/core/gen/surf.cc
     src/core/noise/noise_params.cpp
     src/core/sim/erasure_simulator.cpp
@@ -118,6 +118,15 @@ add_executable(bench_stream_sampler
 target_link_libraries(bench_stream_sampler PRIVATE qerasure qerasure_stim)
 target_include_directories(bench_stream_sampler PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
+add_executable(bench_stream_decode
+    benchmarks/bench_stream_decode.cpp
+    src/core/circuit/compile.cc
+    src/core/simulator/stream_sampler.cc
+    src/core/simulator/sim_internal_utils.cc
+)
+target_link_libraries(bench_stream_decode PRIVATE qerasure qerasure_stim)
+target_include_directories(bench_stream_decode PRIVATE ${CMAKE_SOURCE_DIR}/src)
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(smoke_sim_test
@@ -157,6 +166,24 @@ if(BUILD_TESTING)
   target_link_libraries(sampler_injector_trace_test PRIVATE qerasure qerasure_stim)
   target_include_directories(sampler_injector_trace_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
   add_test(NAME sampler_injector_trace_test COMMAND sampler_injector_trace_test)
+
+  add_executable(hmm_decoder_stream_test
+      tests/hmm_decoder_stream_test.cpp
+      src/core/circuit/compile.cc
+      src/core/simulator/stream_sampler.cc
+      src/core/simulator/sim_internal_utils.cc
+  )
+  target_link_libraries(hmm_decoder_stream_test PRIVATE qerasure qerasure_stim)
+  target_include_directories(hmm_decoder_stream_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  add_test(NAME hmm_decoder_stream_test COMMAND hmm_decoder_stream_test)
+
+  add_executable(surf_hmm_decoder_trace_test
+      tests/surf_hmm_decoder_trace_test.cpp
+      src/core/circuit/compile.cc
+  )
+  target_link_libraries(surf_hmm_decoder_trace_test PRIVATE qerasure qerasure_stim)
+  target_include_directories(surf_hmm_decoder_trace_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  add_test(NAME surf_hmm_decoder_trace_test COMMAND surf_hmm_decoder_trace_test)
 endif()
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src/CMakeLists.txt")

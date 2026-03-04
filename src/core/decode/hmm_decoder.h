@@ -8,37 +8,17 @@
 
 namespace qerasure::decode {
 
-struct FlaggedCheckMapping {
-  // Global check-event index in sampled check-results order.
-  uint32_t check_event_index;
-  // Checked qubit for this event.
-  uint32_t qubit_index;
-  // Operation-group index where the check occurred.
-  uint32_t op_index;
-  // Position of `op_index` inside program.qubit_operation_indices[qubit_index].
-  uint32_t qubit_operation_offset;
-};
+struct HMMDecoder {
+	public:
+    	explicit HMMDecoder(const circuit::CompiledErasureProgram& program);
 
-struct HmmDecoder {
- public:
-  explicit HmmDecoder(const circuit::CompiledErasureProgram& program);
+		void decode(const stim::Circuit& circuit, const std::vector<uint8_t>& check_results);
 
-  // Callback-compatible shot hook.
-  // `check_results` is expected to be in compiled check-event order.
-  void process_shot(const stim::Circuit& circuit, const std::vector<uint8_t>* check_results);
+	private:
+		const circuit::CompiledErasureProgram& program_;
 
-  const std::vector<FlaggedCheckMapping>& flagged_check_mappings() const {
-    return flagged_check_mappings_;
-  }
-
- private:
-  const circuit::CompiledErasureProgram& program_;
-
-  // Event-order lookup tables built once from CompiledErasureProgram.
-  std::vector<uint32_t> check_event_to_qubit_;
-  std::vector<uint32_t> check_event_to_op_index_;
-
-  std::vector<FlaggedCheckMapping> flagged_check_mappings_;
+		std::vector<uint32_t> check_to_op_index;
+		std::vector<uint32_t> check_to_qubit_index;
 };
 
 }  // namespace qerasure::decode
