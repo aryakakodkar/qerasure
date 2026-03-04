@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "core/circuit/compile.h"
-#include "core/simulator/erasure_sampler.h"
 #include "stim/circuit/circuit.h"
 
 namespace qerasure::decode {
@@ -13,8 +12,9 @@ namespace qerasure::decode {
 struct SpreadInjectionEvent {
 	uint32_t op_index;
 	uint32_t target_qubit;
-	simulator::PauliOperation operation;
-	double probability;
+	double p_x;
+	double p_y;
+	double p_z;
 };
 
 using SpreadInjectionBuckets = std::vector<std::vector<SpreadInjectionEvent>>;
@@ -45,6 +45,8 @@ class SurfHMMDecoder {
 	// Global check-event order lookups.
 	std::vector<uint32_t> check_event_to_qubit_;
 	std::vector<uint32_t> check_event_to_op_index_;
+	// Maps operation-group index to the visible Stim emission slot.
+	std::vector<uint32_t> op_to_emit_op_index_;
 };
 
 }  // namespace qerasure::decode
