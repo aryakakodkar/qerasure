@@ -25,6 +25,7 @@ inline void validate_max_persistence(uint32_t max_persistence) {
 struct ErasureModel {
     uint32_t max_persistence;
 
+    // TODO: Onset channel not useful
     PauliChannel onset;
     PauliChannel reset;
     TQGSpreadModel spread;

@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <atomic>
-#include <mutex>
 #include <thread>
 
 #include "core/circuit/compile.h"
@@ -20,8 +19,7 @@ void sample_one_shot(const circuit::CompiledErasureProgram& program,
                      std::vector<uint64_t>* current_erasure_state,
                      std::vector<uint8_t>* last_check_result,
                      std::vector<uint8_t>* check_results,
-                     const std::function<void(const stim::Circuit&, const std::vector<uint8_t>&)>& callback,
-                     std::mutex* callback_mutex) {
+                     const std::function<void(const stim::Circuit&, const std::vector<uint8_t>&)>& callback) {
     stim::Circuit circuit;
 
     // reset erasure state for new shot
@@ -145,12 +143,7 @@ void sample_one_shot(const circuit::CompiledErasureProgram& program,
         }
     }
 
-    if (callback_mutex == nullptr) {
-        callback(circuit, *check_results);
-    } else {
-        std::lock_guard<std::mutex> lock(*callback_mutex);
-        callback(circuit, *check_results);
-    }
+    callback(circuit, *check_results);
 }
 
 }  // namespace
@@ -180,13 +173,12 @@ void StreamSampler::sample(uint32_t num_shots,
         std::vector<uint8_t> check_results(program_.num_checks(), 0);
         for (uint32_t shot = 0; shot < num_shots; ++shot) {
             sample_one_shot(program_, max_persistence, &rng_, &current_erasure_state,
-                            &last_check_result, &check_results, callback, nullptr);
+                            &last_check_result, &check_results, callback);
         }
         return;
     }
 
     std::atomic<uint32_t> next_shot{0};
-    std::mutex callback_mutex;
     std::vector<std::thread> workers;
     workers.reserve(num_threads);
 
@@ -202,7 +194,7 @@ void StreamSampler::sample(uint32_t num_shots,
                 }
                 FastRng shot_rng(seed, shot);
                 sample_one_shot(program_, max_persistence, &shot_rng, &current_erasure_state,
-                                &last_check_result, &check_results, callback, &callback_mutex);
+                                &last_check_result, &check_results, callback);
             }
         });
     }
