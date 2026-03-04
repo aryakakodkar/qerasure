@@ -12,3 +12,4 @@ apps/results/
 .vscode/
 .venv/
 * 2.*
+surf_hmm_decoder_trace_outputs/*

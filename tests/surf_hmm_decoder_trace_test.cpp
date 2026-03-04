@@ -1,6 +1,10 @@
 #include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "core/circuit/compile.h"
@@ -65,6 +69,8 @@ int main() {
 	ErasureSampler sampler(compiled);
 	SurfHMMDecoder decoder(compiled);
 	Injector injector;
+	const std::filesystem::path output_dir = "surf_hmm_decoder_trace_outputs";
+	std::filesystem::create_directories(output_dir);
 
 	SamplerParams params{};
 	params.shots = kShots;
@@ -75,50 +81,55 @@ int main() {
 	}
 
 	for (uint32_t shot = 0; shot < batch.shots.size(); ++shot) {
-		std::cout << "\n=== SHOT " << shot << " SAMPLED TRACE ===\n";
-		std::cout << batch.shots[shot].to_string() << "\n";
-
 		const std::vector<uint8_t> check_bits = extract_check_bits(batch.shots[shot]);
 		if (check_bits.size() != compiled.num_checks()) {
 			throw std::runtime_error("Extracted check bit count does not match compiled num_checks");
 		}
 
-		const stim::Circuit injected = injector.inject(batch, shot);
-		std::cout << "=== SHOT " << shot << " LOOKBACK POSTERIORS ===\n";
-		const SpreadInjectionBuckets buckets =
-			decoder.compute_spread_injections(&check_bits, /*print_posteriors=*/true);
-		std::cout << "=== SHOT " << shot << " SPREAD INJECTIONS ===\n";
-		bool printed_event = false;
-		for (uint32_t op_index = 0; op_index < buckets.size(); ++op_index) {
-			for (const auto& event : buckets[op_index]) {
-				printed_event = true;
-				const char* op = "I";
-				switch (event.operation) {
-					case PauliOperation::X:
-						op = "X_ERROR";
-						break;
-					case PauliOperation::Y:
-						op = "Y_ERROR";
-						break;
-					case PauliOperation::Z:
-						op = "Z_ERROR";
-						break;
-					case PauliOperation::I:
-						op = "I";
-						break;
-				}
-				std::cout << "op_index=" << op_index
-						  << " target=" << event.target_qubit
-						  << " op=" << op
-						  << " p=" << event.probability << "\n";
+		const stim::Circuit sampled_injected = injector.inject(batch, shot);
+
+		// Capture posterior debug output produced by decoder when print_posteriors=true.
+		std::ostringstream posterior_stream;
+		std::streambuf* old_cout = std::cout.rdbuf(posterior_stream.rdbuf());
+		const stim::Circuit decoded_injected =
+			decoder.decode(sampled_injected, &check_bits, /*print_posteriors=*/true);
+		std::cout.rdbuf(old_cout);
+
+		const std::filesystem::path sampled_trace_path =
+			output_dir / ("shot_" + std::to_string(shot) + "_sampled_trace.txt");
+		const std::filesystem::path posterior_path =
+			output_dir / ("shot_" + std::to_string(shot) + "_posteriors.txt");
+		const std::filesystem::path circuit_path =
+			output_dir / ("shot_" + std::to_string(shot) + "_circuit.stim");
+
+		{
+			std::ofstream out(sampled_trace_path);
+			if (!out) {
+				throw std::runtime_error("Failed to open sampled trace output file");
 			}
+			out << batch.shots[shot].to_string();
 		}
-		if (!printed_event) {
-			std::cout << "(none)\n";
+
+		{
+			std::ofstream out(posterior_path);
+			if (!out) {
+				throw std::runtime_error("Failed to open posterior output file");
+			}
+			out << posterior_stream.str();
 		}
-		const stim::Circuit decoded = decoder.decode(injected, &check_bits, /*print_posteriors=*/false);
-		std::cout << "=== SHOT " << shot << " DECODED CIRCUIT ===\n";
-		std::cout << decoded.str() << "\n";
+
+		{
+			std::ofstream out(circuit_path);
+			if (!out) {
+				throw std::runtime_error("Failed to open circuit output file");
+			}
+			out << decoded_injected.str();
+		}
+
+		std::cout << "Saved shot " << shot << " outputs:\n";
+		std::cout << "  " << sampled_trace_path << "\n";
+		std::cout << "  " << posterior_path << "\n";
+		std::cout << "  " << circuit_path << "\n";
 	}
 
 	return 0;
