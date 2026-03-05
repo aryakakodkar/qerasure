@@ -213,6 +213,7 @@ pybind11_add_module(qerasure_python
     src/core/simulator/stream_sampler.cc
     src/core/circuit/pybind_circuit.cc
     src/core/circuit/pybind_compile.cc
+    src/core/decode/pybind_surf_hmm_decoder.cc
     src/core/gen/pybind_surf.cc
     src/core/simulator/pybind_stream_sampler.cc
 )

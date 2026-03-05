@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 namespace qerasure::decode {
@@ -98,7 +99,7 @@ SurfHMMDecoder::SurfHMMDecoder(const circuit::CompiledErasureProgram& program) :
 
 SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
 	const std::vector<uint8_t>* check_results,
-	bool print_posteriors) const {
+	bool verbose) const {
 	SpreadInjectionBuckets buckets(program_.operation_groups.size());
 
 	if (check_results == nullptr) {
@@ -216,7 +217,7 @@ SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
 			}
 		}
 
-		if (print_posteriors) {
+		if (verbose) {
 			std::cout << " [surf_hmm] qubit=" << qubit
 					  << " check_op=" << check_op
 					  << " start_offset=" << program_.qubit_operation_indices.at(qubit)[start_offset]
@@ -328,13 +329,10 @@ SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
 }
 
 stim::Circuit SurfHMMDecoder::decode(
-	const stim::Circuit& base_circuit,
 	const std::vector<uint8_t>* check_results,
-	bool print_posteriors) const {
-	(void)base_circuit;
-
+	bool verbose) const {
 	SpreadInjectionBuckets buckets =
-		compute_spread_injections(check_results, print_posteriors);
+		compute_spread_injections(check_results, verbose);
 
 	stim::Circuit injected;
 	for (uint32_t op_index = 0; op_index < program_.operation_groups.size(); ++op_index) {
@@ -358,20 +356,48 @@ stim::Circuit SurfHMMDecoder::decode(
 	return injected;
 }
 
-void SurfHMMDecoder::for_each_operation_in_qubit_range(
-	uint32_t qubit_index, uint32_t start_qubit_op_offset, uint32_t end_qubit_op_offset,
-	const std::function<void(uint32_t, const circuit::OperationGroup&)>& fn) const {
-	const std::vector<uint32_t>& qubit_ops = program_.qubit_operation_indices.at(qubit_index);
-	if (end_qubit_op_offset >= qubit_ops.size()) {
-	throw std::out_of_range("window end offset outside qubit operation index vector");
+std::string SurfHMMDecoder::debug_decoded_circuit_text(
+	const std::vector<uint8_t>* check_results,
+	bool verbose) const {
+	SpreadInjectionBuckets buckets =
+		compute_spread_injections(check_results, verbose);
+
+	std::ostringstream out;
+	bool first_line = true;
+	for (uint32_t op_index = 0; op_index < program_.operation_groups.size(); ++op_index) {
+		const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
+		if (op_group.stim_instruction.has_value()) {
+			const auto& instr = op_group.stim_instruction.value();
+			if (!first_line) {
+				out << "\n";
+			}
+			first_line = false;
+			out << circuit::opcode_name(instr.op);
+			if (circuit::is_probabilistic_op(instr.op)) {
+				out << "(" << instr.arg << ")";
+			}
+			for (const uint32_t target : instr.targets) {
+				out << " " << target;
+			}
+		}
+
+		for (const SpreadInjectionEvent& event : buckets[op_index]) {
+			const double p_x = std::clamp(event.p_x, 0.0, 1.0);
+			const double p_y = std::clamp(event.p_y, 0.0, 1.0);
+			const double p_z = std::clamp(event.p_z, 0.0, 1.0);
+			if (p_x <= 0.0 && p_y <= 0.0 && p_z <= 0.0) {
+				continue;
+			}
+			if (!first_line) {
+				out << "\n";
+			}
+			first_line = false;
+			out << "PAULI_CHANNEL_1(" << p_x << ", " << p_y << ", " << p_z << ") "
+				<< event.target_qubit;
+		}
 	}
-	if (start_qubit_op_offset > end_qubit_op_offset) {
-	throw std::invalid_argument("start offset cannot exceed end offset");
-	}
-	for (uint32_t offset = start_qubit_op_offset; offset <= end_qubit_op_offset; ++offset) {
-	const uint32_t op_index = qubit_ops[offset];
-	fn(op_index, program_.operation_groups[op_index]);
-	}
+
+	return out.str();
 }
 
 }  // namespace qerasure::decode

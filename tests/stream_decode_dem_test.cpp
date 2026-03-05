@@ -57,12 +57,12 @@ int main() {
 	dem_options.approximate_disjoint_errors_threshold = 1.0;
 	dem_options.ignore_decomposition_failures = true;
 
-	sampler.sample(
+	sampler.sample_with_callback(
 		kShots, kSeed,
 		[&](const stim::Circuit& logical_circuit, const std::vector<uint8_t>& check_results) {
 			try {
 				const stim::Circuit decoded_circuit =
-					decoder.decode(logical_circuit, &check_results, /*print_posteriors=*/false);
+					decoder.decode(&check_results, /*verbose=*/false);
 				const stim::DetectorErrorModel logical_dem =
 					stim::circuit_to_dem(logical_circuit, dem_options);
 				const stim::DetectorErrorModel decoded_dem =
