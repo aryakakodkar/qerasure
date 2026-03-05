@@ -7,8 +7,10 @@ from .circuit_model_utils import (
     ErasureModel,
     OpCode,
     PauliChannel,
+    SurfaceCodeRotated,
     StreamSampler,
     TQGSpreadModel,
+    build_surface_code_erasure_circuit,
     compile_erasure_sampler,
 )
 from .lowering_utils import (
@@ -57,9 +59,11 @@ __all__ = [
     "PauliChannel",
     "TQGSpreadModel",
     "ErasureModel",
+    "SurfaceCodeRotated",
     "ErasureCircuit",
     "CompiledErasureProgram",
     "StreamSampler",
+    "build_surface_code_erasure_circuit",
     "compile_erasure_sampler",
     "NoiseChannel",
     "NoiseParams",
