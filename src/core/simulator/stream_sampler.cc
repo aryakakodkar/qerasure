@@ -32,7 +32,8 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
     std::fill(check_results->begin(), check_results->end(), 0);
     size_t check_idx = 0;
 
-    for (const circuit::OperationGroup& op_group : program.operation_groups) {
+    for (uint32_t op_index = 0; op_index < program.operation_groups.size(); ++op_index) {
+        const circuit::OperationGroup& op_group = program.operation_groups[op_index];
         if (op_group.stim_instruction.has_value()) {
             if (circuit::is_measurement_op(op_group.stim_instruction->op)) {
                 // TODO: Add probabilistic error
@@ -57,19 +58,22 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
             }
         }
 
-        // Should I perform an operation upon onset? I don't think so.
+        // Track qubits whose erasure onset fired at this operation.
+        std::vector<uint32_t> onset_qubits_this_op;
+        onset_qubits_this_op.reserve(op_group.onsets.size() + op_group.onset_pairs.size());
         for (const auto& onset : op_group.onsets) {
             if (rng->next_u64() <= onset.prob_threshold) {
                 (*current_erasure_state)[onset.qubit_index] =
                     (*current_erasure_state)[onset.qubit_index] == 0
                         ? 1
-                        : (*current_erasure_state)[onset.qubit_index] + 1;  // if not already erased, mark as erased
+                        : (*current_erasure_state)[onset.qubit_index] + 1;
+                onset_qubits_this_op.push_back(onset.qubit_index);
             }
         }
 
         for (const auto& onset_pair : op_group.onset_pairs) {
             if (rng->next_u64() <= onset_pair.prob_threshold) {
-                // If either qubit is already erased, skip operation
+                // If either qubit is already erased, skip operation.
                 if ((*current_erasure_state)[onset_pair.qubit_index1] != 0 ||
                     (*current_erasure_state)[onset_pair.qubit_index2] != 0) {
                     continue;
@@ -77,13 +81,15 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
                 uint32_t unerased;
                 if (rng->next_u64() <= (1ULL << 63)) {  // coin-flip for which qubit gets erased
                     (*current_erasure_state)[onset_pair.qubit_index1] = 1;
+                    onset_qubits_this_op.push_back(onset_pair.qubit_index1);
                     unerased = onset_pair.qubit_index2;
                 } else {
                     (*current_erasure_state)[onset_pair.qubit_index2] = 1;
+                    onset_qubits_this_op.push_back(onset_pair.qubit_index2);
                     unerased = onset_pair.qubit_index1;
                 }
 
-                // Sample spread on unerased qubit
+                // ERASE2_ANY onset-spread on the non-erased partner.
                 internal::PauliOperation sampled_op =
                     internal::sample_thresholded_pauli_channel(program.thresholded_onset_channel(), rng);
                 if (sampled_op != internal::PauliOperation::I) {
@@ -92,9 +98,22 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
             }
         }
 
-        for (const auto& spread : op_group.spreads) {
+        for (const auto& spread : op_group.onset_spreads) {
             if ((*current_erasure_state)[spread.aff_qubit_index] != 0 ||
-                (*current_erasure_state)[spread.source_qubit_index] == 0) {  // only sample spread if affected qubit is erased and source qubit is erased
+                std::find(onset_qubits_this_op.begin(), onset_qubits_this_op.end(),
+                          spread.source_qubit_index) == onset_qubits_this_op.end()) {
+                continue;
+            }
+            internal::PauliOperation sampled_op =
+                internal::sample_thresholded_pauli_channel(spread.spread_channel, rng);
+            if (sampled_op != internal::PauliOperation::I) {
+                internal::append_mapped_pauli_operation(spread.aff_qubit_index, sampled_op, &circuit);
+            }
+        }
+
+        for (const auto& spread : op_group.persistent_spreads) {
+            if ((*current_erasure_state)[spread.aff_qubit_index] != 0 ||
+                (*current_erasure_state)[spread.source_qubit_index] == 0) {
                 continue;
             }
             internal::PauliOperation sampled_op =
@@ -115,7 +134,11 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
                     (*last_check_result)[check.qubit_index] = 0;
                 }
             } else {
+                const bool is_final_check_for_qubit =
+                    program.qubit_last_check_operation_index[check.qubit_index] ==
+                    static_cast<int32_t>(op_index);
                 const bool force_true_positive =
+                    is_final_check_for_qubit ||
                     (*current_erasure_state)[check.qubit_index] >= max_persistence;
                 if (force_true_positive) {
                     (*check_results)[check_idx++] = 1;

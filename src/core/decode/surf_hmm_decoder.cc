@@ -263,6 +263,7 @@ SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
 		for (uint32_t offset = start_offset; offset <= end_offset; ++offset) {
 			const uint32_t op_index = program_.qubit_operation_indices.at(qubit)[offset];
 			std::vector<LocalTargetChannelAccum> local_channels;
+			double p_onset_at_op = 0.0;
 			const auto accumulate_channel = [&local_channels](
 											 uint32_t target_qubit, double p_x, double p_y, double p_z) {
 				if (p_x <= 0.0 && p_y <= 0.0 && p_z <= 0.0) {
@@ -283,6 +284,9 @@ SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
 				   onset_branches[branch_index].op_index <= op_index) {
 				const OnsetBranch& branch = onset_branches[branch_index];
 				p_erased_by_op += branch.probability;
+				if (branch.op_index == op_index) {
+					p_onset_at_op += branch.probability;
+				}
 				if (branch.from_onset_pair) {
 					const PauliChannel& onset_channel = program_.model().onset;
 					const double onset_px = branch.probability * onset_channel.p_x;
@@ -293,9 +297,23 @@ SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
 				branch_index++;
 			}
 
+			if (p_onset_at_op > 0.0) {
+				const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
+				for (const auto& spread : op_group.onset_spreads) {
+					if (spread.source_qubit_index != qubit) {
+						continue;
+					}
+
+					const double p_x = p_onset_at_op * spread.spread_probability_channel.p_x;
+					const double p_y = p_onset_at_op * spread.spread_probability_channel.p_y;
+					const double p_z = p_onset_at_op * spread.spread_probability_channel.p_z;
+					accumulate_channel(spread.aff_qubit_index, p_x, p_y, p_z);
+				}
+			}
+
 			if (p_erased_by_op > 0.0) {
 				const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
-				for (const auto& spread : op_group.spreads) {
+				for (const auto& spread : op_group.persistent_spreads) {
 					if (spread.source_qubit_index != qubit) {
 						continue;
 					}

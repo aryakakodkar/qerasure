@@ -160,15 +160,18 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
             }
 
             group.onsets.reserve(op_group.onsets.size());
-            group.spreads.reserve(op_group.spreads.size());
+            group.spreads.reserve(op_group.onset_spreads.size() + op_group.persistent_spreads.size());
             group.checks.reserve(op_group.checks.size());
             group.resets.reserve(op_group.resets.size());
+            std::vector<uint32_t> onset_qubits_this_op;
+            onset_qubits_this_op.reserve(op_group.onsets.size() + op_group.onset_pairs.size());
 
             for (const auto& onset : op_group.onsets) {
                 if (rng_.next_u64() <= onset.prob_threshold) {
                     current_erasure_state[onset.qubit_index] = current_erasure_state[onset.qubit_index] == 0 
                         ? 1 : current_erasure_state[onset.qubit_index] + 1; // if not already erased, mark as erased
                     group.onsets.push_back({onset.qubit_index});
+                    onset_qubits_this_op.push_back(onset.qubit_index);
                 }
             }
 
@@ -183,10 +186,12 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
                     if (rng_.next_u64() <= (1ULL << 63)) { // coin-flip for which qubit gets erased
                         current_erasure_state[onset_pair.qubit_index1] = 1;
                         group.onsets.push_back({onset_pair.qubit_index1});
+                        onset_qubits_this_op.push_back(onset_pair.qubit_index1);
                         unerased = onset_pair.qubit_index2;
                     } else {
                         current_erasure_state[onset_pair.qubit_index2] = 1;
                         group.onsets.push_back({onset_pair.qubit_index2});
+                        onset_qubits_this_op.push_back(onset_pair.qubit_index2);
                         unerased = onset_pair.qubit_index1;
                     }
 
@@ -199,7 +204,20 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
                 }
             }
 
-            for (const auto& spread : op_group.spreads) {
+            for (const auto& spread : op_group.onset_spreads) {
+                if (current_erasure_state[spread.aff_qubit_index] != 0 ||
+                    std::find(onset_qubits_this_op.begin(), onset_qubits_this_op.end(),
+                              spread.source_qubit_index) == onset_qubits_this_op.end()) {
+                    continue;
+                }
+                PauliOperation sampled_op = from_internal_pauli_operation(
+                    internal::sample_thresholded_pauli_channel(spread.spread_channel, &rng_));
+                if (sampled_op != PauliOperation::I) {
+                    group.spreads.push_back({spread.aff_qubit_index, sampled_op});
+                }
+            }
+
+            for (const auto& spread : op_group.persistent_spreads) {
                 if (current_erasure_state[spread.aff_qubit_index] != 0 || current_erasure_state[spread.source_qubit_index] == 0) { // only sample spread if affected qubit is erased and source qubit is erased
                     continue;
                 }
@@ -221,7 +239,11 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
                         last_check_result[check.qubit_index] = 0;
                     }
                 } else {    
+                    const bool is_final_check_for_qubit =
+                        program_.qubit_last_check_operation_index[check.qubit_index] ==
+                        static_cast<int32_t>(op_index);
                     const bool force_true_positive =
+                        is_final_check_for_qubit ||
                         current_erasure_state[check.qubit_index] >= max_persistence;
                     if (force_true_positive) {
                         group.checks.push_back({check.qubit_index, CheckOutcome::TruePositive});

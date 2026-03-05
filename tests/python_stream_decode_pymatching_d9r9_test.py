@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""End-to-end Python decode test for d=9, rounds=9 surface-code erasures."""
+"""End-to-end Python decode test with first-failure artifact capture."""
 
 from __future__ import annotations
 
 import json
 import sys
-import time
 from pathlib import Path
 
 import numpy as np
 import pymatching as pm
+import stim
 
 
 def _import_qerasure():
@@ -73,23 +73,25 @@ def main() -> int:
     sampler = qe.StreamSampler(program)
     decoder = qe.SurfHMMDecoder(program)
 
-    t0 = time.perf_counter()
-    dets, obs, checks = sampler.sample(num_shots=shots, seed=seed, num_threads=1)
-    t1 = time.perf_counter()
+    state = {"shot": 0}
 
-    if dets.shape[0] != shots or obs.shape[0] != shots or checks.shape[0] != shots:
-        raise RuntimeError("Unexpected sampled array row count.")
-    if dets.dtype != np.uint8 or obs.dtype != np.uint8 or checks.dtype != np.uint8:
-        raise RuntimeError("Expected uint8 arrays from stream sampling.")
+    def _on_shot(circuit_text: str, check_row: np.ndarray) -> None:
+        shot = state["shot"]
+        state["shot"] += 1
+        check_row = np.asarray(check_row, dtype=np.uint8)
+        real_circuit = stim.Circuit(circuit_text)
 
-    num_obs = obs.shape[1] if obs.ndim == 2 else 1
-    predictions = np.zeros((shots, max(1, num_obs)), dtype=np.uint8)
-
-    decode_start = time.perf_counter()
-    for shot in range(shots):
-        check_row = checks[shot]
         try:
             decoded_circuit = decoder.decode(check_row, verbose=False)
+            decoded_dem = decoded_circuit.detector_error_model(
+                decompose_errors=True,
+                approximate_disjoint_errors=True,
+            )
+            matching = pm.Matching.from_detector_error_model(decoded_dem)
+            full = real_circuit.compile_detector_sampler().sample(shots=1, append_observables=True)
+            n_det = int(real_circuit.num_detectors)
+            det_row = np.asarray(full[0, :n_det], dtype=np.uint8)
+            _decode_obs_with_matching(matching, det_row)
         except Exception as ex:
             violations = decoder.find_probability_violations(check_row)
             flagged_checks = []
@@ -105,7 +107,6 @@ def main() -> int:
                         "qubit_index": int(link.qubit_index),
                     }
                 )
-            debug_text = decoder.debug_decoded_circuit_text(check_row, verbose=False)
             prefix = f"shot_{shot:05d}"
             (artifacts_dir / f"{prefix}_decode_error.txt").write_text(str(ex))
             (artifacts_dir / f"{prefix}_check_flags.txt").write_text(
@@ -117,28 +118,21 @@ def main() -> int:
             (artifacts_dir / f"{prefix}_probability_violations.json").write_text(
                 json.dumps(violations, indent=2)
             )
-            (artifacts_dir / f"{prefix}_decoded_circuit_debug.stim").write_text(debug_text)
+            (artifacts_dir / f"{prefix}_real_circuit.stim").write_text(str(real_circuit))
+            (artifacts_dir / f"{prefix}_decoded_circuit.stim").write_text(str(decoded_circuit))
+            (artifacts_dir / f"{prefix}_decoded_circuit_debug.stim").write_text(
+                decoder.debug_decoded_circuit_text(check_row, verbose=False)
+            )
             raise RuntimeError(
-                f"Failed to parse decoded circuit at shot {shot}. "
-                f"Artifacts saved under {artifacts_dir}."
+                f"Failure at shot {shot}. Saved real + decoded circuits under {artifacts_dir}."
             ) from ex
 
-        decoded_dem = decoded_circuit.detector_error_model(
-            decompose_errors=True,
-            approximate_disjoint_errors=True,
-        )
-        matching = pm.Matching.from_detector_error_model(decoded_dem)
-        pred = _decode_obs_with_matching(matching, dets[shot])
-        n = min(pred.shape[0], predictions.shape[1])
-        predictions[shot, :n] = pred[:n]
-    decode_end = time.perf_counter()
-
-    truths = obs
-    if truths.ndim == 1:
-        truths = truths[:, None]
-    n_obs = min(truths.shape[1], predictions.shape[1])
-    mismatches = np.any(predictions[:, :n_obs] != truths[:, :n_obs], axis=1)
-    logical_error_rate = float(np.mean(mismatches))
+    sampler.sample_with_callback(
+        num_shots=shots,
+        seed=seed,
+        callback=_on_shot,
+        num_threads=1,
+    )
 
     print("python_stream_decode_pymatching_d9r9_test")
     print(f"distance: {distance}")
@@ -147,9 +141,7 @@ def main() -> int:
     print(f"erasure_prob: {erasure_prob}")
     print(f"max_persistence: {max_persistence}")
     print(f"erasable_qubits: DATA")
-    print(f"sample_time_s: {t1 - t0:.6f}")
-    print(f"decode_time_s: {decode_end - decode_start:.6f}")
-    print(f"logical_error_rate: {logical_error_rate:.8f}")
+    print("status: completed all shots without decode failure")
     return 0
 
 
