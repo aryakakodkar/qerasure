@@ -12,6 +12,12 @@
 
 namespace py = pybind11;
 
+namespace qerasure::python_bindings {
+void bind_circuit(py::module_& m);
+void bind_compile(py::module_& m);
+void bind_stream_sampler(py::module_& m);
+}  // namespace qerasure::python_bindings
+
 namespace {
 
 py::list gates_to_python(const qerasure::RotatedSurfaceCode& code) {
@@ -84,6 +90,10 @@ std::string noise_repr(const qerasure::NoiseParams& params) {
 
 PYBIND11_MODULE(qerasure_python, m) {
   m.doc() = "Python bindings for the qerasure code library";
+
+  qerasure::python_bindings::bind_circuit(m);
+  qerasure::python_bindings::bind_compile(m);
+  qerasure::python_bindings::bind_stream_sampler(m);
 
   py::class_<qerasure::RotatedSurfaceCode>(m, "RotatedSurfaceCode")
       .def(py::init<std::size_t>(), py::arg("distance"))

@@ -1,6 +1,16 @@
 """Public Python API for qerasure."""
 
 from .code_utils import RotatedSurfaceCode
+from .circuit_model_utils import (
+    CompiledErasureProgram,
+    ErasureCircuit,
+    ErasureModel,
+    OpCode,
+    PauliChannel,
+    StreamSampler,
+    TQGSpreadModel,
+    compile_erasure_sampler,
+)
 from .lowering_utils import (
     LoweredErrorParams,
     LoweredEventOrigin,
@@ -43,6 +53,14 @@ from .virtual_translation_utils import (
 
 __all__ = [
     "RotatedSurfaceCode",
+    "OpCode",
+    "PauliChannel",
+    "TQGSpreadModel",
+    "ErasureModel",
+    "ErasureCircuit",
+    "CompiledErasureProgram",
+    "StreamSampler",
+    "compile_erasure_sampler",
     "NoiseChannel",
     "NoiseParams",
     "NOISE_CHANNELS",
