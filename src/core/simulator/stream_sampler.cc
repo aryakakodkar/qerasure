@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <stdexcept>
 #include <thread>
 
 #include "core/circuit/compile.h"
@@ -26,6 +27,7 @@ void sample_one_shot(const circuit::CompiledErasureProgram& program,
     std::fill(current_erasure_state->begin(), current_erasure_state->end(), 0);
     std::fill(last_check_result->begin(), last_check_result->end(), 0);
     std::fill(check_results->begin(), check_results->end(), 0);
+    size_t check_idx = 0;
 
     for (const circuit::OperationGroup& op_group : program.operation_groups) {
         if (op_group.stim_instruction.has_value()) {
@@ -100,11 +102,10 @@ void sample_one_shot(const circuit::CompiledErasureProgram& program,
         }
 
         // TODO: Multiple checks of the same bool. Presumably slows down sampling. Probably not a bottleneck.
-        uint32_t check_idx = 0;
         for (const auto& check : op_group.checks) {
             if ((*current_erasure_state)[check.qubit_index] == 0) {
                 bool false_positive = rng->next_u64() <= check.false_positive_threshold;
-                (*check_results)[check_idx++] = false_positive;
+                (*check_results)[check_idx++] = false_positive ? 1 : 0;
                 if (false_positive) {
                     (*last_check_result)[check.qubit_index] = 1;
                 } else {
@@ -114,11 +115,11 @@ void sample_one_shot(const circuit::CompiledErasureProgram& program,
                 const bool force_true_positive =
                     (*current_erasure_state)[check.qubit_index] >= max_persistence;
                 if (force_true_positive) {
-                    (*check_results)[check_idx++] = 0;
+                    (*check_results)[check_idx++] = 1;
                     (*last_check_result)[check.qubit_index] = 1;
                 } else {
                     bool false_negative = rng->next_u64() <= check.false_negative_threshold;
-                    (*check_results)[check_idx++] = false_negative;
+                    (*check_results)[check_idx++] = false_negative ? 0 : 1;
                     if (false_negative) {
                         (*current_erasure_state)[check.qubit_index]++;
                         (*last_check_result)[check.qubit_index] = 0;
@@ -141,6 +142,10 @@ void sample_one_shot(const circuit::CompiledErasureProgram& program,
                 (*last_check_result)[reset.qubit_index] = 0;      // clear most recent check outcome after reset
             }
         }
+    }
+
+    if (check_idx != check_results->size()) {
+        throw std::logic_error("StreamSampler check vector size mismatch while sampling shot.");
     }
 
     callback(circuit, *check_results);

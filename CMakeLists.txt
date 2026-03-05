@@ -209,7 +209,12 @@ endif()
 
 pybind11_add_module(qerasure_python
     src/interop/python/pybindings.cpp
+    src/core/circuit/compile.cc
+    src/core/simulator/stream_sampler.cc
+    src/core/circuit/pybind_circuit.cc
+    src/core/circuit/pybind_compile.cc
+    src/core/simulator/pybind_stream_sampler.cc
 )
 
 target_link_libraries(qerasure_python PRIVATE qerasure qerasure_stim)
-target_include_directories(qerasure_python PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(qerasure_python PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)
