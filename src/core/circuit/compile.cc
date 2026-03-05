@@ -80,6 +80,7 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
     qubit_operation_indices.resize(max_qubit_index_ + 1);
     qubit_check_operation_indices.resize(max_qubit_index_ + 1);
     qubit_reset_operation_indices.resize(max_qubit_index_ + 1);
+    qubit_last_check_operation_index.assign(max_qubit_index_ + 1, -1);
     std::vector<std::vector<uint32_t>> qubit_check_event_indices(max_qubit_index_ + 1);
     
     // TODO: Need to check if qubits that might be erased are involved in ERROR ops or MEASUREMENTS
@@ -108,11 +109,11 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     uint32_t control = instr.targets[i];
                     uint32_t target = instr.targets[i + 1];
                     if (checks_survived.find(control) != checks_survived.end()) {
-                        group.spreads.push_back(
+                        group.persistent_spreads.push_back(
                             {control, target, thresholded_control_spread, control_spread_probability_channel});
                     }
                     if (checks_survived.find(target) != checks_survived.end()) {
-                        group.spreads.push_back(
+                        group.persistent_spreads.push_back(
                             {target, control, thresholded_target_spread, target_spread_probability_channel});
                     }
                 }
@@ -131,7 +132,8 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     uint32_t target2 = instr.targets[i + 1]; // affected by onset spread
                     group.onsets.push_back({target1, probability_to_threshold(instr.arg), instr.arg});
                     erasable_qubits_.push_back(target1);
-                    group.spreads.push_back({target1, target2, thresholded_onset, onset_probability_channel});
+                    group.onset_spreads.push_back(
+                        {target1, target2, thresholded_onset, onset_probability_channel});
                     checks_survived[target1] = 0;
                     mark_qubit_operation(target1);
                     mark_qubit_operation(target2);
@@ -162,6 +164,7 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                      check_false_positive_threshold,
                      model.check_false_negative_prob,
                      model.check_false_positive_prob});
+                qubit_last_check_operation_index[target] = static_cast<int32_t>(op_index);
                 qubit_check_event_indices[target].push_back(num_checks_);
                 num_checks_++;
                 mark_qubit_operation(target);
@@ -192,7 +195,8 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                 mark_qubit_reset(target);
             }
         }
-        group.op_num = group.onsets.size() + group.spreads.size() + group.checks.size() + group.resets.size();
+        group.op_num = group.onsets.size() + group.onset_pairs.size() + group.onset_spreads.size() +
+                       group.persistent_spreads.size() + group.checks.size() + group.resets.size();
         op_index++;
     }
 
@@ -276,13 +280,22 @@ void CompiledErasureProgram::print_summary() const {
                       << ", Y: " << reset.reset_probability_channel.p_y
                       << ", Z: " << reset.reset_probability_channel.p_z << ")\n";
         }
-        for (size_t j = 0; j < operation_groups[i].spreads.size(); ++j) {
-            const auto& spread = operation_groups[i].spreads[j];
-            std::cout << "  Spread - Affected Qubit: " << spread.aff_qubit_index 
-                      << ", Spread Channel: (X: " << spread.spread_probability_channel.p_x
+        for (size_t j = 0; j < operation_groups[i].onset_spreads.size(); ++j) {
+            const auto& spread = operation_groups[i].onset_spreads[j];
+            std::cout << "  Onset Spread - Source Qubit: " << spread.source_qubit_index
+                      << ", Affected Qubit: " << spread.aff_qubit_index
+                      << ", Channel: (X: " << spread.spread_probability_channel.p_x
                       << ", Y: " << spread.spread_probability_channel.p_y
                       << ", Z: " << spread.spread_probability_channel.p_z << ")\n";
-        }  
+        }
+        for (size_t j = 0; j < operation_groups[i].persistent_spreads.size(); ++j) {
+            const auto& spread = operation_groups[i].persistent_spreads[j];
+            std::cout << "  Persistent Spread - Source Qubit: " << spread.source_qubit_index
+                      << ", Affected Qubit: " << spread.aff_qubit_index
+                      << ", Channel: (X: " << spread.spread_probability_channel.p_x
+                      << ", Y: " << spread.spread_probability_channel.p_y
+                      << ", Z: " << spread.spread_probability_channel.p_z << ")\n";
+        }
     }
 }
 

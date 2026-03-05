@@ -53,7 +53,10 @@ struct OperationGroup {
     std::optional<Instruction> stim_instruction;
     std::vector<ErasureOnset> onsets;
     std::vector<ErasureOnsetPair> onset_pairs;
-    std::vector<ErasureSpread> spreads;
+    // Spreads that occur only when onset happens at this operation.
+    std::vector<ErasureSpread> onset_spreads;
+    // Spreads that occur whenever the source qubit is erased at this operation.
+    std::vector<ErasureSpread> persistent_spreads;
     std::vector<ErasureCheck> checks;
     std::vector<ErasureReset> resets;
     uint32_t op_num = 0; // number of operations in this group, used for vector resizing when sampling
@@ -77,6 +80,8 @@ struct CompiledErasureProgram  {
     std::vector<std::vector<uint32_t>> qubit_operation_indices;
     std::vector<std::vector<uint32_t>> qubit_check_operation_indices;
     std::vector<std::vector<uint32_t>> qubit_reset_operation_indices;
+    // For each qubit, operation index of its final erasure check (-1 if never checked).
+    std::vector<int32_t> qubit_last_check_operation_index;
 
     inline uint32_t max_qubit_index() const { return max_qubit_index_; }
     inline uint32_t num_checks() const { return num_checks_; }
