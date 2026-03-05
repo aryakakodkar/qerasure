@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
   StreamSampler sampler(compiled);
 
   const auto t0 = std::chrono::steady_clock::now();
-  sampler.sample(
+  sampler.sample_with_callback(
       kShots, kSeed,
       [](const stim::Circuit&, const std::vector<uint8_t>&) {
         // Intentionally empty callback for pure sampling+injection throughput measurement.

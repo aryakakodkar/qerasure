@@ -44,9 +44,9 @@ int main() {
   std::atomic<uint64_t> total_flagged{0};
   const auto t0 = std::chrono::steady_clock::now();
 
-  sampler.sample(
+  sampler.sample_with_callback(
       kShots, kSeed,
-      [&](const stim::Circuit& circuit, const std::vector<uint8_t>& check_results) {
+      [&](const stim::Circuit&, const std::vector<uint8_t>& check_results) {
         uint64_t local_flagged = 0;
         for (uint8_t bit : check_results) {
           if (bit == 1) {
@@ -54,7 +54,7 @@ int main() {
           }
         }
         total_flagged.fetch_add(local_flagged, std::memory_order_relaxed);
-        const stim::Circuit injected = decoder.decode(circuit, &check_results, /*print_posteriors=*/false);
+        const stim::Circuit injected = decoder.decode(&check_results, /*verbose=*/false);
         (void)injected;
         shots_seen.fetch_add(1, std::memory_order_relaxed);
       },

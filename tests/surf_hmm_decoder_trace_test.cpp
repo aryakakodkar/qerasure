@@ -88,11 +88,11 @@ int main() {
 
 		const stim::Circuit sampled_injected = injector.inject(batch, shot);
 
-		// Capture posterior debug output produced by decoder when print_posteriors=true.
+		// Capture posterior debug output produced by decoder when verbose=true.
 		std::ostringstream posterior_stream;
 		std::streambuf* old_cout = std::cout.rdbuf(posterior_stream.rdbuf());
 		const stim::Circuit decoded_injected =
-			decoder.decode(sampled_injected, &check_bits, /*print_posteriors=*/true);
+			decoder.decode(&check_bits, /*verbose=*/true);
 		std::cout.rdbuf(old_cout);
 
 		const std::filesystem::path sampled_trace_path =

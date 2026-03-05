@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
+#include <string>
 #include <vector>
 
 #include "core/circuit/compile.h"
@@ -26,18 +26,19 @@ class SurfHMMDecoder {
 	// Computes posterior-weighted spread injections for a single shot.
 	SpreadInjectionBuckets compute_spread_injections(
 		const std::vector<uint8_t>* check_results,
-		bool print_posteriors = false) const;
+		bool verbose = false) const;
 
 	// Builds and returns a Stim circuit with spread injections added in time order.
 	stim::Circuit decode(
-		const stim::Circuit& base_circuit,
 		const std::vector<uint8_t>* check_results,
-		bool print_posteriors = false) const;
+		bool verbose = false) const;
 
-	// Iterates operation-group indices in qubit-local offset range [start, end].
-	void for_each_operation_in_qubit_range(
-		uint32_t qubit_index, uint32_t start_qubit_op_offset, uint32_t end_qubit_op_offset,
-		const std::function<void(uint32_t op_index, const circuit::OperationGroup&)>& fn) const;
+	// Builds a text debug representation of the decoded circuit.
+	// This does not enforce Stim disjointness constraints and is useful for
+	// diagnosing invalid PAULI_CHANNEL_1 probability tuples.
+	std::string debug_decoded_circuit_text(
+		const std::vector<uint8_t>* check_results,
+		bool verbose = false) const;
 
 	private:
 	const circuit::CompiledErasureProgram& program_;

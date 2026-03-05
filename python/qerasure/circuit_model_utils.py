@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable, Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 from ._bindings import cpp
-
-if TYPE_CHECKING:
-    import numpy as np
 
 OpCode = cpp.OpCode
 PauliChannel = cpp.PauliChannel
@@ -89,13 +86,12 @@ class CompiledErasureProgram:
     def _to_cpp_program(self):
         return self._cpp_program
 
-
-def _estimate_output_bytes(num_shots: int, num_detectors: int, num_observables: int, num_checks: int) -> int:
-    return int(num_shots) * int(num_detectors + num_observables + num_checks)
-
+    @property
+    def check_lookback_links(self):
+        return self._cpp_program.check_lookback_links
 
 class StreamSampler:
-    """Python stream sampler with optional default Stim detector-sampler callback."""
+    """Python stream sampler that returns detector/observable/check arrays."""
 
     def __init__(self, program: CompiledErasureProgram | object):
         if isinstance(program, CompiledErasureProgram):
@@ -117,70 +113,67 @@ class StreamSampler:
         num_shots: int,
         seed: int,
         num_threads: int = 1,
-        callback: Optional[Callable[[object, object], None]] = None,
-        max_output_bytes: int = 2 * 1024 * 1024 * 1024,
+    ):
+        shots = int(num_shots)
+        threads = int(num_threads)
+        if shots < 0:
+            raise ValueError("num_shots must be non-negative")
+        if threads < 0:
+            raise ValueError("num_threads must be non-negative")
+        return self._cpp_sampler.sample_syndromes(shots, int(seed), threads)
+
+    def sample_with_callback(
+        self,
+        num_shots: int,
+        seed: int,
+        callback: Optional[Callable[[str, object], None]] = None,
+        num_threads: int = 1,
     ):
         import numpy as np
 
         shots = int(num_shots)
+        threads = int(num_threads)
         if shots < 0:
             raise ValueError("num_shots must be non-negative")
-        if int(num_threads) != 1:
-            raise ValueError(
-                "Python StreamSampler.sample currently requires num_threads=1 because callbacks run in Python."
-            )
+        if callback is None:
+            return self._cpp_sampler.sample_with_callback(shots, int(seed), None, threads)
 
-        if callback is not None:
-            def wrapped(circuit_obj, check_flags):
-                callback(circuit_obj, np.asarray(check_flags, dtype=np.uint8))
+        def wrapped(circuit_obj, check_flags):
+            callback(circuit_obj, np.asarray(check_flags, dtype=np.uint8))
 
-            self._cpp_sampler.sample(shots, int(seed), wrapped, 1)
-            return None
+        return self._cpp_sampler.sample_with_callback(shots, int(seed), wrapped, threads)
 
+
+class SurfHMMDecoder:
+    """Python wrapper for the surface-code HMM decoder circuit builder."""
+
+    def __init__(self, program: CompiledErasureProgram | object):
+        if isinstance(program, CompiledErasureProgram):
+            cpp_program = program._to_cpp_program()
+        else:
+            cpp_program = program
+        self._cpp_decoder = cpp.SurfHMMDecoder(cpp_program)
+
+    def decode(self, check_results: Sequence[int], verbose: bool = False):
+        """Build the decoded Stim circuit from erasure-check flags."""
+        checks = [int(v) for v in check_results]
         try:
-            import stim  # noqa: F401
+            import stim
         except ModuleNotFoundError as exc:
             raise ModuleNotFoundError(
-                "The Python `stim` package is required for StreamSampler default callback mode."
+                "The Python `stim` package is required for SurfHMMDecoder.decode."
             ) from exc
+        return stim.Circuit(self._cpp_decoder.decode(checks, bool(verbose)))
 
-        checks_out = np.zeros((shots, self._num_checks), dtype=np.uint8)
-        if shots == 0:
-            return (
-                np.zeros((0, 0), dtype=np.uint8),
-                np.zeros((0, 0), dtype=np.uint8),
-                checks_out,
-            )
+    def find_probability_violations(self, check_results: Sequence[int]):
+        """Return PAULI_CHANNEL_1 events whose disjoint probabilities sum above 1."""
+        checks = [int(v) for v in check_results]
+        return self._cpp_decoder.find_probability_violations(checks)
 
-        dets_out = None
-        obs_out = None
-        shot_index = 0
-
-        def default_callback(circuit_obj, check_flags):
-            nonlocal shot_index, dets_out, obs_out
-            det_sampler = circuit_obj.compile_detector_sampler()
-            dets, obs = det_sampler.sample(shots=1, separate_observables=True)
-            det_row = np.asarray(dets[0], dtype=np.uint8)
-            obs_row = np.asarray(obs[0], dtype=np.uint8)
-
-            if dets_out is None:
-                estimated = _estimate_output_bytes(shots, det_row.size, obs_row.size, self._num_checks)
-                if estimated > int(max_output_bytes):
-                    raise MemoryError(
-                        f"Requested output arrays need {estimated} bytes, exceeding max_output_bytes={max_output_bytes}."
-                    )
-                dets_out = np.empty((shots, det_row.size), dtype=np.uint8)
-                obs_out = np.empty((shots, obs_row.size), dtype=np.uint8)
-
-            dets_out[shot_index, :] = det_row
-            obs_out[shot_index, :] = obs_row
-            checks_out[shot_index, :] = np.asarray(check_flags, dtype=np.uint8)
-            shot_index += 1
-
-        self._cpp_sampler.sample(shots, int(seed), default_callback, 1)
-        if dets_out is None or obs_out is None:
-            raise RuntimeError("StreamSampler returned no shots unexpectedly.")
-        return dets_out, obs_out, checks_out
+    def debug_decoded_circuit_text(self, check_results: Sequence[int], verbose: bool = False) -> str:
+        """Return a textual decoded-circuit dump for debugging invalid probability tuples."""
+        checks = [int(v) for v in check_results]
+        return str(self._cpp_decoder.debug_decoded_circuit_text(checks, bool(verbose)))
 
 
 def compile_erasure_sampler(

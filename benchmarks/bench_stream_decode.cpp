@@ -51,15 +51,15 @@ int main(int argc, char** argv) {
   std::atomic<uint64_t> decode_sink_ops{0};
 
   const auto t0 = std::chrono::steady_clock::now();
-  sampler.sample(
+  sampler.sample_with_callback(
       kShots, kSeed,
-      [&](const stim::Circuit& circuit, const std::vector<uint8_t>& check_results) {
+      [&](const stim::Circuit&, const std::vector<uint8_t>& check_results) {
         uint64_t local_flags = 0;
         for (uint8_t bit : check_results) {
           local_flags += static_cast<uint64_t>(bit == 1);
         }
         flagged_checks.fetch_add(local_flags, std::memory_order_relaxed);
-        const stim::Circuit decoded = decoder.decode(circuit, &check_results, /*print_posteriors=*/false);
+        const stim::Circuit decoded = decoder.decode(&check_results, /*verbose=*/false);
         decode_sink_ops.fetch_add(decoded.operations.size(), std::memory_order_relaxed);
       },
       threads);
