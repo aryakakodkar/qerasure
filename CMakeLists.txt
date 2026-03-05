@@ -184,6 +184,16 @@ if(BUILD_TESTING)
   target_link_libraries(surf_hmm_decoder_trace_test PRIVATE qerasure qerasure_stim)
   target_include_directories(surf_hmm_decoder_trace_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
   add_test(NAME surf_hmm_decoder_trace_test COMMAND surf_hmm_decoder_trace_test)
+
+  add_executable(stream_decode_dem_test
+      tests/stream_decode_dem_test.cpp
+      src/core/circuit/compile.cc
+      src/core/simulator/stream_sampler.cc
+      src/core/simulator/sim_internal_utils.cc
+  )
+  target_link_libraries(stream_decode_dem_test PRIVATE qerasure qerasure_stim)
+  target_include_directories(stream_decode_dem_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  add_test(NAME stream_decode_dem_test COMMAND stream_decode_dem_test)
 endif()
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/build/_deps/pybind11-src/CMakeLists.txt")
