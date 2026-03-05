@@ -61,12 +61,16 @@ void append_round_detectors(circuit::ErasureCircuit* circuit, std::size_t num_x_
 SurfaceCodeRotated::SurfaceCodeRotated(uint32_t distance) : code_(distance) {}
 
 circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, double erasure_prob,
-                                                          std::string erasable_qubits) {
+                                                          std::string erasable_qubits,
+                                                          double reset_failure_prob) {
   if (rounds == 0) {
     throw std::invalid_argument("rounds must be > 0");
   }
   if (erasure_prob < 0.0 || erasure_prob > 1.0) {
     throw std::invalid_argument("erasure_prob must be in [0, 1]");
+  }
+  if (reset_failure_prob < 0.0 || reset_failure_prob > 1.0) {
+    throw std::invalid_argument("reset_failure_prob must be in [0, 1]");
   }
 
   const ErasableMode mode = parse_erasable_mode(erasable_qubits);
@@ -206,7 +210,7 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
     }
 
     circuit.append(circuit::OpCode::H, x_ancillas);
-    circuit.append(circuit::OpCode::ECR, erasable_targets, 1.0);
+    circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
     circuit.append(circuit::OpCode::MR, all_ancillas);
     append_round_detectors(&circuit, num_x_anc, num_z_anc, num_anc, round);
   }

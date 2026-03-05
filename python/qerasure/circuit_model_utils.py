@@ -14,6 +14,7 @@ OpCode = cpp.OpCode
 PauliChannel = cpp.PauliChannel
 TQGSpreadModel = cpp.TQGSpreadModel
 ErasureModel = cpp.ErasureModel
+SurfaceCodeRotated = cpp.SurfaceCodeRotated
 
 
 class ErasureCircuit:
@@ -189,3 +190,23 @@ def compile_erasure_sampler(
     """Convenience helper: circuit + model -> compiled program -> stream sampler."""
     program = CompiledErasureProgram(circuit=circuit, model=model)
     return StreamSampler(program)
+
+
+def build_surface_code_erasure_circuit(
+    distance: int,
+    rounds: int,
+    erasure_prob: float,
+    erasable_qubits: str = "ALL",
+    reset_failure_prob: float = 0.0,
+) -> ErasureCircuit:
+    """Build a rotated-surface-code erasure circuit using the C++ generator."""
+    generator = SurfaceCodeRotated(int(distance))
+    cpp_circuit = generator.build_circuit(
+        int(rounds),
+        float(erasure_prob),
+        str(erasable_qubits),
+        float(reset_failure_prob),
+    )
+    wrapped = ErasureCircuit()
+    wrapped._cpp_circuit = cpp_circuit
+    return wrapped
