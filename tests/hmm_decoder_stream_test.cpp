@@ -6,7 +6,7 @@
 
 #include "core/circuit/compile.h"
 #include "core/circuit/erasure_model.h"
-#include "core/decode/surf_hmm_decoder.h"
+#include "core/decode/surf_dem_builder.h"
 #include "core/gen/surf.h"
 #include "core/model/pauli_channel.h"
 #include "core/simulator/stream_sampler.h"
@@ -38,7 +38,7 @@ int main() {
 
   const CompiledErasureProgram compiled(erasure_circuit, model);
   StreamSampler sampler(compiled);
-  SurfHMMDecoder decoder(compiled);
+  SurfDemBuilder decoder(compiled);
 
   std::atomic<uint32_t> shots_seen{0};
   std::atomic<uint64_t> total_flagged{0};
@@ -54,7 +54,7 @@ int main() {
           }
         }
         total_flagged.fetch_add(local_flagged, std::memory_order_relaxed);
-        const stim::Circuit injected = decoder.decode(&check_results, /*verbose=*/false);
+        const stim::Circuit injected = decoder.build_decoded_circuit(&check_results, /*verbose=*/false);
         (void)injected;
         shots_seen.fetch_add(1, std::memory_order_relaxed);
       },

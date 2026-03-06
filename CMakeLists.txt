@@ -50,7 +50,7 @@ endif()
 add_library(qerasure
     src/core/code/rotated_surface_code.cpp
     src/core/circuit/circuit.cc
-    src/core/decode/surf_hmm_decoder.cc
+    src/core/decode/surf_dem_builder.cc
     src/core/gen/surf.cc
     src/core/noise/noise_params.cpp
     src/core/sim/erasure_simulator.cpp
@@ -177,13 +177,13 @@ if(BUILD_TESTING)
   target_include_directories(hmm_decoder_stream_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
   add_test(NAME hmm_decoder_stream_test COMMAND hmm_decoder_stream_test)
 
-  add_executable(surf_hmm_decoder_trace_test
-      tests/surf_hmm_decoder_trace_test.cpp
+  add_executable(surf_dem_builder_trace_test
+      tests/surf_dem_builder_trace_test.cpp
       src/core/circuit/compile.cc
   )
-  target_link_libraries(surf_hmm_decoder_trace_test PRIVATE qerasure qerasure_stim)
-  target_include_directories(surf_hmm_decoder_trace_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-  add_test(NAME surf_hmm_decoder_trace_test COMMAND surf_hmm_decoder_trace_test)
+  target_link_libraries(surf_dem_builder_trace_test PRIVATE qerasure qerasure_stim)
+  target_include_directories(surf_dem_builder_trace_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  add_test(NAME surf_dem_builder_trace_test COMMAND surf_dem_builder_trace_test)
 
   add_executable(stream_decode_dem_test
       tests/stream_decode_dem_test.cpp
@@ -213,7 +213,7 @@ pybind11_add_module(qerasure_python
     src/core/simulator/stream_sampler.cc
     src/core/circuit/pybind_circuit.cc
     src/core/circuit/pybind_compile.cc
-    src/core/decode/pybind_surf_hmm_decoder.cc
+    src/core/decode/pybind_surf_dem_builder.cc
     src/core/gen/pybind_surf.cc
     src/core/simulator/pybind_stream_sampler.cc
 )

@@ -19,9 +19,9 @@ struct SpreadInjectionEvent {
 
 using SpreadInjectionBuckets = std::vector<std::vector<SpreadInjectionEvent>>;
 
-class SurfHMMDecoder {
+class SurfDemBuilder {
 	public:
-	explicit SurfHMMDecoder(const circuit::CompiledErasureProgram& program);
+	explicit SurfDemBuilder(const circuit::CompiledErasureProgram& program);
 
 	// Computes posterior-weighted spread injections for a single shot.
 	SpreadInjectionBuckets compute_spread_injections(
@@ -29,14 +29,14 @@ class SurfHMMDecoder {
 		bool verbose = false) const;
 
 	// Builds and returns a Stim circuit with spread injections added in time order.
-	stim::Circuit decode(
+	stim::Circuit build_decoded_circuit(
 		const std::vector<uint8_t>* check_results,
 		bool verbose = false) const;
 
 	// Builds a text debug representation of the decoded circuit.
 	// This does not enforce Stim disjointness constraints and is useful for
 	// diagnosing invalid PAULI_CHANNEL_1 probability tuples.
-	std::string debug_decoded_circuit_text(
+	std::string build_decoded_circuit_text(
 		const std::vector<uint8_t>* check_results,
 		bool verbose = false) const;
 

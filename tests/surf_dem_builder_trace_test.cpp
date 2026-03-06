@@ -9,7 +9,7 @@
 
 #include "core/circuit/compile.h"
 #include "core/circuit/erasure_model.h"
-#include "core/decode/surf_hmm_decoder.h"
+#include "core/decode/surf_dem_builder.h"
 #include "core/gen/surf.h"
 #include "core/model/pauli_channel.h"
 #include "core/simulator/erasure_sampler.h"
@@ -67,9 +67,9 @@ int main() {
 
 	const CompiledErasureProgram compiled(erasure_circuit, model);
 	ErasureSampler sampler(compiled);
-	SurfHMMDecoder decoder(compiled);
+	SurfDemBuilder decoder(compiled);
 	Injector injector;
-	const std::filesystem::path output_dir = "surf_hmm_decoder_trace_outputs";
+	const std::filesystem::path output_dir = "surf_dem_builder_trace_outputs";
 	std::filesystem::create_directories(output_dir);
 
 	SamplerParams params{};
@@ -77,7 +77,7 @@ int main() {
 	params.seed = kSeed;
 	const SampledBatch batch = sampler.sample(params);
 	if (batch.shots.size() != kShots) {
-		throw std::runtime_error("Unexpected sampled shot count in surf_hmm_decoder_trace_test");
+		throw std::runtime_error("Unexpected sampled shot count in surf_dem_builder_trace_test");
 	}
 
 	for (uint32_t shot = 0; shot < batch.shots.size(); ++shot) {
@@ -92,7 +92,7 @@ int main() {
 		std::ostringstream posterior_stream;
 		std::streambuf* old_cout = std::cout.rdbuf(posterior_stream.rdbuf());
 		const stim::Circuit decoded_injected =
-			decoder.decode(&check_bits, /*verbose=*/true);
+			decoder.build_decoded_circuit(&check_bits, /*verbose=*/true);
 		std::cout.rdbuf(old_cout);
 
 		const std::filesystem::path sampled_trace_path =

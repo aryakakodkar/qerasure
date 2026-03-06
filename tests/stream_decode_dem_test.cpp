@@ -8,7 +8,7 @@
 
 #include "core/circuit/compile.h"
 #include "core/circuit/erasure_model.h"
-#include "core/decode/surf_hmm_decoder.h"
+#include "core/decode/surf_dem_builder.h"
 #include "core/gen/surf.h"
 #include "core/model/pauli_channel.h"
 #include "core/simulator/stream_sampler.h"
@@ -41,7 +41,7 @@ int main() {
 
 	const CompiledErasureProgram compiled(erasure_circuit, model);
 	StreamSampler sampler(compiled);
-	SurfHMMDecoder decoder(compiled);
+	SurfDemBuilder decoder(compiled);
 
 	std::atomic<uint32_t> shots_seen{0};
 	std::atomic<uint32_t> dem_failures{0};
@@ -62,7 +62,7 @@ int main() {
 		[&](const stim::Circuit& logical_circuit, const std::vector<uint8_t>& check_results) {
 			try {
 				const stim::Circuit decoded_circuit =
-					decoder.decode(&check_results, /*verbose=*/false);
+					decoder.build_decoded_circuit(&check_results, /*verbose=*/false);
 				const stim::DetectorErrorModel logical_dem =
 					stim::circuit_to_dem(logical_circuit, dem_options);
 				const stim::DetectorErrorModel decoded_dem =

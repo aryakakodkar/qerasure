@@ -3,35 +3,35 @@
 
 #include <algorithm>
 
-#include "core/decode/surf_hmm_decoder.h"
+#include "core/decode/surf_dem_builder.h"
 
 namespace py = pybind11;
 
 namespace qerasure::python_bindings {
 
-void bind_surf_hmm_decoder(py::module_& m) {
-	py::class_<decode::SurfHMMDecoder>(m, "SurfHMMDecoder")
+void bind_surf_dem_builder(py::module_& m) {
+	py::class_<decode::SurfDemBuilder>(m, "SurfDemBuilder")
 		.def(py::init<const circuit::CompiledErasureProgram&>(), py::arg("program"),
 			 py::keep_alive<1, 2>())
 		.def(
-			"decode",
-			[](const decode::SurfHMMDecoder& decoder,
+			"build_decoded_circuit",
+			[](const decode::SurfDemBuilder& decoder,
 			   const std::vector<uint8_t>& check_results,
 			   bool verbose) {
-				return decoder.decode(&check_results, verbose).str();
+				return decoder.build_decoded_circuit(&check_results, verbose).str();
 			},
 			py::arg("check_results"), py::arg("verbose") = false)
 		.def(
-			"debug_decoded_circuit_text",
-			[](const decode::SurfHMMDecoder& decoder,
+			"build_decoded_circuit_text",
+			[](const decode::SurfDemBuilder& decoder,
 			   const std::vector<uint8_t>& check_results,
 			   bool verbose) {
-				return decoder.debug_decoded_circuit_text(&check_results, verbose);
+				return decoder.build_decoded_circuit_text(&check_results, verbose);
 			},
 			py::arg("check_results"), py::arg("verbose") = false)
 		.def(
 			"find_probability_violations",
-			[](const decode::SurfHMMDecoder& decoder,
+			[](const decode::SurfDemBuilder& decoder,
 			   const std::vector<uint8_t>& check_results) {
 				std::vector<py::dict> out;
 				const decode::SpreadInjectionBuckets buckets =

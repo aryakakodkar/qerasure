@@ -88,16 +88,16 @@ void RotatedSurfaceCode::build_stabilizers() {
 
   // Direction vectors for X- and Z-ancilla interactions at each of the 4 steps.
   constexpr std::array<std::pair<int, int>, 4> kXDirections = {
-      std::pair<int, int>{-1, 1},
+      std::pair<int, int>{1, -1},
       std::pair<int, int>{-1, -1},
       std::pair<int, int>{1, 1},
-      std::pair<int, int>{1, -1},
+      std::pair<int, int>{-1, 1},
   };
   constexpr std::array<std::pair<int, int>, 4> kZDirections = {
-      std::pair<int, int>{-1, 1},
+      std::pair<int, int>{1, -1},
       std::pair<int, int>{1, 1},
       std::pair<int, int>{-1, -1},
-      std::pair<int, int>{1, -1},
+      std::pair<int, int>{-1, 1},
   };
 
   for (std::size_t step = 0; step < 4; ++step) {

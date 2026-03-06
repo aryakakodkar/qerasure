@@ -71,7 +71,7 @@ def main() -> int:
     program = qe.CompiledErasureProgram(circuit, model)
 
     sampler = qe.StreamSampler(program)
-    decoder = qe.SurfHMMDecoder(program)
+    decoder = qe.SurfDemBuilder(program)
 
     state = {"shot": 0}
 
@@ -82,7 +82,7 @@ def main() -> int:
         real_circuit = stim.Circuit(circuit_text)
 
         try:
-            decoded_circuit = decoder.decode(check_row, verbose=False)
+            decoded_circuit = decoder.build_decoded_circuit(check_row, verbose=False)
             decoded_dem = decoded_circuit.detector_error_model(
                 decompose_errors=True,
                 approximate_disjoint_errors=True,
@@ -121,7 +121,7 @@ def main() -> int:
             (artifacts_dir / f"{prefix}_real_circuit.stim").write_text(str(real_circuit))
             (artifacts_dir / f"{prefix}_decoded_circuit.stim").write_text(str(decoded_circuit))
             (artifacts_dir / f"{prefix}_decoded_circuit_debug.stim").write_text(
-                decoder.debug_decoded_circuit_text(check_row, verbose=False)
+                decoder.build_decoded_circuit_text(check_row, verbose=False)
             )
             raise RuntimeError(
                 f"Failure at shot {shot}. Saved real + decoded circuits under {artifacts_dir}."
