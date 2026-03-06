@@ -3,15 +3,292 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Sequence
+import re
+from typing import Callable, Mapping, Optional, Sequence
 
 from ._bindings import cpp
 
 OpCode = cpp.OpCode
 PauliChannel = cpp.PauliChannel
 TQGSpreadModel = cpp.TQGSpreadModel
-ErasureModel = cpp.ErasureModel
 SurfaceCodeRotated = cpp.SurfaceCodeRotated
+_CppErasureModel = cpp.ErasureModel
+_UINT32_MAX = (1 << 32) - 1
+
+
+def _validate_probability(value: float, *, name: str) -> float:
+    p = float(value)
+    if p < 0.0 or p > 1.0:
+        raise ValueError(f"{name} must be in [0, 1], got {p}.")
+    return p
+
+
+def _pauli_channel_from_components(px: float, py: float, pz: float, *, slot_name: str) -> PauliChannel:
+    p_x = _validate_probability(px, name=f"{slot_name}.p_x")
+    p_y = _validate_probability(py, name=f"{slot_name}.p_y")
+    p_z = _validate_probability(pz, name=f"{slot_name}.p_z")
+    if p_x + p_y + p_z > 1.0 + 1e-12:
+        raise ValueError(
+            f"{slot_name} channel is invalid: p_x + p_y + p_z must be <= 1. "
+            f"Got {p_x + p_y + p_z}."
+        )
+    return PauliChannel(p_x, p_y, p_z)
+
+
+def _parse_single_float(text: str, *, slot_name: str, op_name: str) -> float:
+    try:
+        return _validate_probability(float(text), name=f"{slot_name}:{op_name}")
+    except ValueError:
+        raise ValueError(f"Invalid probability '{text}' in {slot_name} spec '{op_name}(... )'.")
+
+
+def _parse_channel_spec(spec: object, *, slot_name: str) -> PauliChannel:
+    if spec is None:
+        return PauliChannel()
+    if isinstance(spec, PauliChannel):
+        return _pauli_channel_from_components(spec.p_x, spec.p_y, spec.p_z, slot_name=slot_name)
+    if isinstance(spec, (tuple, list)) and len(spec) == 3:
+        return _pauli_channel_from_components(spec[0], spec[1], spec[2], slot_name=slot_name)
+    if not isinstance(spec, str):
+        raise TypeError(
+            f"{slot_name} must be one of: string spec, PauliChannel, or length-3 tuple/list. "
+            f"Got type {type(spec).__name__}."
+        )
+
+    text = spec.strip()
+    match = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*)\((.*)\)", text)
+    if match is None:
+        raise ValueError(
+            f"Invalid channel spec for {slot_name}: '{spec}'. "
+            "Expected forms like X_ERROR(p), Z_ERROR(p), DEPOLARIZE1(p), PAULI_CHANNEL(px,py,pz)."
+        )
+    op_name = match.group(1).upper()
+    args_text = match.group(2).strip()
+    parts = [part.strip() for part in args_text.split(",")] if args_text else []
+
+    if op_name == "PAULI_CHANNEL":
+        if len(parts) != 3:
+            raise ValueError(
+                f"{slot_name} PAULI_CHANNEL must have 3 args, got {len(parts)} in '{spec}'."
+            )
+        try:
+            px, py, pz = (float(parts[0]), float(parts[1]), float(parts[2]))
+        except ValueError:
+            raise ValueError(f"Invalid PAULI_CHANNEL args in '{spec}'.")
+        return _pauli_channel_from_components(px, py, pz, slot_name=slot_name)
+
+    if len(parts) != 1:
+        raise ValueError(f"{slot_name} {op_name} must have 1 arg, got {len(parts)} in '{spec}'.")
+    p = _parse_single_float(parts[0], slot_name=slot_name, op_name=op_name)
+
+    if op_name == "X_ERROR":
+        return _pauli_channel_from_components(p, 0.0, 0.0, slot_name=slot_name)
+    if op_name == "Y_ERROR":
+        return _pauli_channel_from_components(0.0, p, 0.0, slot_name=slot_name)
+    if op_name == "Z_ERROR":
+        return _pauli_channel_from_components(0.0, 0.0, p, slot_name=slot_name)
+    if op_name == "DEPOLARIZE1":
+        return _pauli_channel_from_components(p / 3.0, p / 3.0, p / 3.0, slot_name=slot_name)
+
+    raise ValueError(
+        f"Unsupported channel op '{op_name}' in {slot_name}. "
+        "Supported: PAULI_CHANNEL, X_ERROR, Y_ERROR, Z_ERROR, DEPOLARIZE1."
+    )
+
+
+def _apply_check_probabilities(
+    model: "ErasureModel",
+    *,
+    check_error_prob: float | None,
+    check_false_negative_prob: float | None,
+    check_false_positive_prob: float | None,
+) -> None:
+    if check_error_prob is not None:
+        q = _validate_probability(check_error_prob, name="check_error_prob")
+        model.check_error_prob = q
+    if check_false_negative_prob is not None:
+        model.check_false_negative_prob = _validate_probability(
+            check_false_negative_prob, name="check_false_negative_prob"
+        )
+    if check_false_positive_prob is not None:
+        model.check_false_positive_prob = _validate_probability(
+            check_false_positive_prob, name="check_false_positive_prob"
+        )
+
+
+class ErasureModel:
+    """User-facing wrapper for `cpp.ErasureModel`.
+
+    Supports two styles:
+    1. Legacy constructor forwarding to the C++ constructor.
+    2. `from_specs(...)` for named channel slots using string specs.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self._cpp_model = _CppErasureModel(*args, **kwargs)
+
+    @classmethod
+    def from_specs(
+        cls,
+        *,
+        max_persistence: int = _UINT32_MAX,
+        channels: Optional[Mapping[str, object]] = None,
+        onset: object = None,
+        reset: object = None,
+        spread_control: object = None,
+        spread_target: object = None,
+        check_error_prob: float | None = None,
+        check_false_negative_prob: float | None = None,
+        check_false_positive_prob: float | None = None,
+    ) -> "ErasureModel":
+        allowed = {"onset", "reset", "spread_control", "spread_target"}
+        channels = dict(channels or {})
+        unknown_keys = set(channels.keys()) - allowed
+        if unknown_keys:
+            keys = ", ".join(sorted(unknown_keys))
+            raise ValueError(
+                f"Unknown channel slot(s): {keys}. Expected one of: onset, reset, "
+                "spread_control, spread_target."
+            )
+
+        onset_spec = onset if onset is not None else channels.get("onset")
+        reset_spec = reset if reset is not None else channels.get("reset")
+        spread_control_spec = (
+            spread_control if spread_control is not None else channels.get("spread_control")
+        )
+        spread_target_spec = spread_target if spread_target is not None else channels.get("spread_target")
+
+        onset_channel = _parse_channel_spec(onset_spec, slot_name="onset")
+        reset_channel = _parse_channel_spec(reset_spec, slot_name="reset")
+        spread_control_channel = _parse_channel_spec(spread_control_spec, slot_name="spread_control")
+        spread_target_channel = _parse_channel_spec(spread_target_spec, slot_name="spread_target")
+
+        model = cls(
+            int(max_persistence),
+            onset_channel,
+            reset_channel,
+            spread_control_channel,
+            spread_target_channel,
+        )
+        _apply_check_probabilities(
+            model,
+            check_error_prob=check_error_prob,
+            check_false_negative_prob=check_false_negative_prob,
+            check_false_positive_prob=check_false_positive_prob,
+        )
+        return model
+
+    def _to_cpp_model(self):
+        return self._cpp_model
+
+    @property
+    def max_persistence(self) -> int:
+        return int(self._cpp_model.max_persistence)
+
+    @max_persistence.setter
+    def max_persistence(self, value: int) -> None:
+        self._cpp_model.max_persistence = int(value)
+
+    @property
+    def onset(self):
+        return self._cpp_model.onset
+
+    @onset.setter
+    def onset(self, value) -> None:
+        self._cpp_model.onset = value
+
+    @property
+    def reset(self):
+        return self._cpp_model.reset
+
+    @reset.setter
+    def reset(self, value) -> None:
+        self._cpp_model.reset = value
+
+    @property
+    def spread(self):
+        return self._cpp_model.spread
+
+    @spread.setter
+    def spread(self, value) -> None:
+        self._cpp_model.spread = value
+
+    @property
+    def check_false_negative_prob(self) -> float:
+        return float(self._cpp_model.check_false_negative_prob)
+
+    @check_false_negative_prob.setter
+    def check_false_negative_prob(self, value: float) -> None:
+        self._cpp_model.check_false_negative_prob = _validate_probability(
+            value, name="check_false_negative_prob"
+        )
+
+    @property
+    def check_false_positive_prob(self) -> float:
+        return float(self._cpp_model.check_false_positive_prob)
+
+    @check_false_positive_prob.setter
+    def check_false_positive_prob(self, value: float) -> None:
+        self._cpp_model.check_false_positive_prob = _validate_probability(
+            value, name="check_false_positive_prob"
+        )
+
+    @property
+    def check_error_prob(self) -> float | None:
+        fn = self.check_false_negative_prob
+        fp = self.check_false_positive_prob
+        if abs(fn - fp) < 1e-15:
+            return fn
+        return None
+
+    @check_error_prob.setter
+    def check_error_prob(self, value: float) -> None:
+        q = _validate_probability(value, name="check_error_prob")
+        self._cpp_model.check_false_negative_prob = q
+        self._cpp_model.check_false_positive_prob = q
+
+    def explain(self) -> str:
+        spread = self._cpp_model.spread
+        return (
+            "ErasureModel(\n"
+            f"  max_persistence={int(self._cpp_model.max_persistence)},\n"
+            f"  onset=PAULI_CHANNEL({self._cpp_model.onset.p_x}, {self._cpp_model.onset.p_y}, {self._cpp_model.onset.p_z}),\n"
+            f"  reset=PAULI_CHANNEL({self._cpp_model.reset.p_x}, {self._cpp_model.reset.p_y}, {self._cpp_model.reset.p_z}),\n"
+            f"  spread_control=PAULI_CHANNEL({spread.control_spread.p_x}, {spread.control_spread.p_y}, {spread.control_spread.p_z}),\n"
+            f"  spread_target=PAULI_CHANNEL({spread.target_spread.p_x}, {spread.target_spread.p_y}, {spread.target_spread.p_z}),\n"
+            f"  check_false_negative_prob={self._cpp_model.check_false_negative_prob},\n"
+            f"  check_false_positive_prob={self._cpp_model.check_false_positive_prob}\n"
+            ")"
+        )
+
+    def __repr__(self) -> str:
+        return self.explain()
+
+
+def make_erasure_model(
+    *,
+    max_persistence: int = _UINT32_MAX,
+    channels: Optional[Mapping[str, object]] = None,
+    onset: object = None,
+    reset: object = None,
+    spread_control: object = None,
+    spread_target: object = None,
+    check_error_prob: float | None = None,
+    check_false_negative_prob: float | None = None,
+    check_false_positive_prob: float | None = None,
+) -> ErasureModel:
+    """Build an ErasureModel using named channel slots and string specs."""
+    return ErasureModel.from_specs(
+        max_persistence=max_persistence,
+        channels=channels,
+        onset=onset,
+        reset=reset,
+        spread_control=spread_control,
+        spread_target=spread_target,
+        check_error_prob=check_error_prob,
+        check_false_negative_prob=check_false_negative_prob,
+        check_false_positive_prob=check_false_positive_prob,
+    )
 
 
 class ErasureCircuit:
@@ -63,13 +340,14 @@ class CompiledErasureProgram:
     """Python holder around `cpp.CompiledErasureProgram`."""
 
     circuit: ErasureCircuit | object
-    model: ErasureModel
+    model: ErasureModel | object
 
     def __post_init__(self):
         cpp_circuit = (
             self.circuit._to_cpp_circuit() if isinstance(self.circuit, ErasureCircuit) else self.circuit
         )
-        self._cpp_program = cpp.CompiledErasureProgram(cpp_circuit, self.model)
+        cpp_model = self.model._to_cpp_model() if isinstance(self.model, ErasureModel) else self.model
+        self._cpp_program = cpp.CompiledErasureProgram(cpp_circuit, cpp_model)
 
     @property
     def num_checks(self) -> int:

@@ -13,6 +13,7 @@ from .circuit_model_utils import (
 	TQGSpreadModel,
 	build_surface_code_erasure_circuit,
 	compile_erasure_sampler,
+	make_erasure_model,
 )
 
 __all__ = [
@@ -28,4 +29,5 @@ __all__ = [
 	"StreamSampler",
 	"build_surface_code_erasure_circuit",
 	"compile_erasure_sampler",
+	"make_erasure_model",
 ]
