@@ -39,10 +39,12 @@ def _inject_extension_path() -> None:
 
 
 def load_cpp_module():
+    # Prefer local build artifacts first so stale site-packages installs don't shadow
+    # in-repo development builds.
+    _inject_extension_path()
     try:
         return importlib.import_module(_DEF_MODULE_NAME)
     except ImportError:
-        _inject_extension_path()
         return importlib.import_module(_DEF_MODULE_NAME)
 
 

@@ -1,4 +1,4 @@
-#include "core/decode/surf_hmm_decoder.h"
+#include "core/decode/surf_dem_builder.h"
 #include "core/circuit/compile.h"
 #include "core/simulator/sim_internal_utils.h"
 
@@ -67,7 +67,7 @@ struct LocalTargetChannelAccum {
 
 }  // namespace
 
-SurfHMMDecoder::SurfHMMDecoder(const circuit::CompiledErasureProgram& program) : program_(program) {
+SurfDemBuilder::SurfDemBuilder(const circuit::CompiledErasureProgram& program) : program_(program) {
 
 	check_event_to_qubit_.reserve(program_.num_checks());
 	check_event_to_op_index_.reserve(program_.num_checks());
@@ -90,25 +90,25 @@ SurfHMMDecoder::SurfHMMDecoder(const circuit::CompiledErasureProgram& program) :
 	}
 
 	if (check_event_to_qubit_.size() != program_.num_checks()) {
-		throw std::logic_error("SurfHMMDecoder check-event map size mismatch with CompiledErasureProgram");
+		throw std::logic_error("SurfDemBuilder check-event map size mismatch with CompiledErasureProgram");
 	}
 	if (program_.check_lookback_links.size() != program_.num_checks()) {
-		throw std::logic_error("SurfHMMDecoder expected check_lookback_links to match num_checks");
+		throw std::logic_error("SurfDemBuilder expected check_lookback_links to match num_checks");
 	}
 }
 
-SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
+SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 	const std::vector<uint8_t>* check_results,
 	bool verbose) const {
 	SpreadInjectionBuckets buckets(program_.operation_groups.size());
 
 	if (check_results == nullptr) {
 		throw std::invalid_argument(
-			"SurfHMMDecoder::compute_spread_injections requires non-null check_results pointer");
+			"SurfDemBuilder::compute_spread_injections requires non-null check_results pointer");
 	}
 	if (check_results->size() != program_.num_checks()) {
 		throw std::invalid_argument(
-			"SurfHMMDecoder::compute_spread_injections check_results size mismatch");
+			"SurfDemBuilder::compute_spread_injections check_results size mismatch");
 	}
 
 	for (uint32_t check_event_index = 0; check_event_index < check_results->size(); ++check_event_index) {
@@ -117,7 +117,7 @@ SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
 			continue;
 		}
 		if (bit != 1) {
-			throw std::invalid_argument("SurfHMMDecoder::decode expects binary check results");
+			throw std::invalid_argument("SurfDemBuilder::build_decoded_circuit expects binary check results");
 		}
 
 		const circuit::CheckLookbackLink& link = program_.check_lookback_links.at(check_event_index);
@@ -218,7 +218,7 @@ SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
 		}
 
 		if (verbose) {
-			std::cout << " [surf_hmm] qubit=" << qubit
+			std::cout << " [surf_dem_builder] qubit=" << qubit
 					  << " check_op=" << check_op
 					  << " start_offset=" << program_.qubit_operation_indices.at(qubit)[start_offset]
 					  << " end_offset=" << program_.qubit_operation_indices.at(qubit)[end_offset]
@@ -346,7 +346,7 @@ SpreadInjectionBuckets SurfHMMDecoder::compute_spread_injections(
 	return buckets;
 }
 
-stim::Circuit SurfHMMDecoder::decode(
+stim::Circuit SurfDemBuilder::build_decoded_circuit(
 	const std::vector<uint8_t>* check_results,
 	bool verbose) const {
 	SpreadInjectionBuckets buckets =
@@ -374,7 +374,7 @@ stim::Circuit SurfHMMDecoder::decode(
 	return injected;
 }
 
-std::string SurfHMMDecoder::debug_decoded_circuit_text(
+std::string SurfDemBuilder::build_decoded_circuit_text(
 	const std::vector<uint8_t>* check_results,
 	bool verbose) const {
 	SpreadInjectionBuckets buckets =
