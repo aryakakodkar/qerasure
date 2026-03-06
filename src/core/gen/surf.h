@@ -4,7 +4,7 @@
 #include <string>
 
 #include "core/circuit/circuit.h"
-#include "qerasure/core/code/rotated_surface_code.h"
+#include "core/code/rotated_surface_code.h"
 
 namespace qerasure::gen {
 
