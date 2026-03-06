@@ -9,11 +9,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(ENABLE_GPERFTOOLS "Enable gperftools profiling support" OFF)
-
 include(FetchContent)
 
-# Pull Stim automatically and link against its C++ library for translation support.
 FetchContent_Declare(
   stim
   GIT_REPOSITORY https://github.com/quantumlib/Stim.git
@@ -31,168 +28,64 @@ add_library(qerasure_stim STATIC ${STIM_SOURCE_FILES_REL})
 target_include_directories(qerasure_stim PUBLIC "${stim_SOURCE_DIR}/src")
 target_compile_features(qerasure_stim PUBLIC cxx_std_20)
 
-set(QERASURE_EXTRA_LIBS "")
-set(QERASURE_EXTRA_INCLUDE_DIRS "")
-if(ENABLE_GPERFTOOLS)
-  find_library(PROFILER_LIB profiler)
-  find_path(GPERFTOOLS_INCLUDE_DIR gperftools/profiler.h
-      PATHS /opt/homebrew/include /usr/local/include /usr/include)
-
-  if(PROFILER_LIB AND GPERFTOOLS_INCLUDE_DIR)
-    list(APPEND QERASURE_EXTRA_LIBS ${PROFILER_LIB})
-    list(APPEND QERASURE_EXTRA_INCLUDE_DIRS ${GPERFTOOLS_INCLUDE_DIR})
-    message(STATUS "gperftools enabled: ${PROFILER_LIB}")
-  else()
-    message(FATAL_ERROR "ENABLE_GPERFTOOLS=ON but gperftools was not found")
-  endif()
-endif()
-
 add_library(qerasure
     src/core/code/rotated_surface_code.cpp
     src/core/circuit/circuit.cc
+    src/core/circuit/compile.cc
     src/core/decode/surf_dem_builder.cc
     src/core/gen/surf.cc
-    src/core/noise/noise_params.cpp
-    src/core/sim/erasure_simulator.cpp
     src/core/simulator/erasure_sampler.cc
     src/core/simulator/injector.cc
     src/core/simulator/sim_internal_utils.cc
-    src/core/lowering/lowering.cpp
-    src/core/translation/common.cpp
-    src/core/translation/surf_gen.cpp
-    src/core/translation/logical.cpp
-    src/core/translation/virtual.cpp
+    src/core/simulator/stream_sampler.cc
 )
 target_link_libraries(qerasure PRIVATE qerasure_stim)
 target_compile_features(qerasure PUBLIC cxx_std_20)
 
 target_include_directories(qerasure
     PUBLIC
-        ${CMAKE_SOURCE_DIR}/include
-    PRIVATE
         ${CMAKE_SOURCE_DIR}/src
 )
 
-if(EXISTS "${CMAKE_SOURCE_DIR}/apps/run_sim.cpp")
-  add_executable(run_sim
-      apps/run_sim.cpp
-  )
-  target_link_libraries(run_sim PRIVATE qerasure)
-endif()
-
-add_executable(bench_erasure_sim
-    benchmarks/bench_erasure_sim.cpp
-)
-target_link_libraries(bench_erasure_sim PRIVATE qerasure ${QERASURE_EXTRA_LIBS})
-if(QERASURE_EXTRA_INCLUDE_DIRS)
-  target_include_directories(bench_erasure_sim PRIVATE ${QERASURE_EXTRA_INCLUDE_DIRS})
-endif()
-
-add_executable(bench_erasure_and_lower
-    benchmarks/bench_erasure_and_lower.cpp
-)
-target_link_libraries(bench_erasure_and_lower PRIVATE qerasure ${QERASURE_EXTRA_LIBS})
-if(QERASURE_EXTRA_INCLUDE_DIRS)
-  target_include_directories(bench_erasure_and_lower PRIVATE ${QERASURE_EXTRA_INCLUDE_DIRS})
-endif()
-
-add_executable(bench_stim_translation
-    benchmarks/bench_stim_translation.cpp
-)
-target_link_libraries(bench_stim_translation PRIVATE qerasure qerasure_stim)
-
 add_executable(erasure_sampler_bench
     benchmarks/erasure_sampler_bench.cpp
-    src/core/circuit/circuit.cc
-    src/core/circuit/compile.cc
 )
 target_link_libraries(erasure_sampler_bench PRIVATE qerasure)
-target_include_directories(erasure_sampler_bench PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 add_executable(bench_stream_sampler
     benchmarks/bench_stream_sampler.cpp
-    src/core/circuit/compile.cc
-    src/core/simulator/stream_sampler.cc
-    src/core/simulator/sim_internal_utils.cc
 )
 target_link_libraries(bench_stream_sampler PRIVATE qerasure qerasure_stim)
-target_include_directories(bench_stream_sampler PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 add_executable(bench_stream_decode
     benchmarks/bench_stream_decode.cpp
-    src/core/circuit/compile.cc
-    src/core/simulator/stream_sampler.cc
-    src/core/simulator/sim_internal_utils.cc
 )
 target_link_libraries(bench_stream_decode PRIVATE qerasure qerasure_stim)
-target_include_directories(bench_stream_decode PRIVATE ${CMAKE_SOURCE_DIR}/src)
 
 include(CTest)
 if(BUILD_TESTING)
-  add_executable(smoke_sim_test
-      tests/smoke_sim_test.cpp
-  )
-  target_link_libraries(smoke_sim_test PRIVATE qerasure)
-  add_test(NAME smoke_sim_test COMMAND smoke_sim_test)
-
-  add_executable(lowering_standard_test
-      tests/lowering_standard_test.cpp
-  )
-  target_link_libraries(lowering_standard_test PRIVATE qerasure)
-  add_test(NAME lowering_standard_test COMMAND lowering_standard_test)
-
-  add_executable(statistical_convergence_test
-      tests/statistical_convergence_test.cpp
-  )
-  target_link_libraries(statistical_convergence_test PRIVATE qerasure)
-
-  add_executable(stim_translation_test
-      tests/stim_translation_test.cpp
-  )
-  target_link_libraries(stim_translation_test PRIVATE qerasure)
-  add_test(NAME stim_translation_test COMMAND stim_translation_test)
-
-  add_executable(surf_gen_test
-      tests/surf_gen_test.cpp
-  )
-  target_link_libraries(surf_gen_test PRIVATE qerasure)
-  target_include_directories(surf_gen_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
-  add_test(NAME surf_gen_test COMMAND surf_gen_test)
-
   add_executable(sampler_injector_trace_test
       tests/sampler_injector_trace_test.cpp
-      src/core/circuit/compile.cc
   )
   target_link_libraries(sampler_injector_trace_test PRIVATE qerasure qerasure_stim)
-  target_include_directories(sampler_injector_trace_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
   add_test(NAME sampler_injector_trace_test COMMAND sampler_injector_trace_test)
 
   add_executable(hmm_decoder_stream_test
       tests/hmm_decoder_stream_test.cpp
-      src/core/circuit/compile.cc
-      src/core/simulator/stream_sampler.cc
-      src/core/simulator/sim_internal_utils.cc
   )
   target_link_libraries(hmm_decoder_stream_test PRIVATE qerasure qerasure_stim)
-  target_include_directories(hmm_decoder_stream_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
   add_test(NAME hmm_decoder_stream_test COMMAND hmm_decoder_stream_test)
 
   add_executable(surf_dem_builder_trace_test
       tests/surf_dem_builder_trace_test.cpp
-      src/core/circuit/compile.cc
   )
   target_link_libraries(surf_dem_builder_trace_test PRIVATE qerasure qerasure_stim)
-  target_include_directories(surf_dem_builder_trace_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
   add_test(NAME surf_dem_builder_trace_test COMMAND surf_dem_builder_trace_test)
 
   add_executable(stream_decode_dem_test
       tests/stream_decode_dem_test.cpp
-      src/core/circuit/compile.cc
-      src/core/simulator/stream_sampler.cc
-      src/core/simulator/sim_internal_utils.cc
   )
   target_link_libraries(stream_decode_dem_test PRIVATE qerasure qerasure_stim)
-  target_include_directories(stream_decode_dem_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
   add_test(NAME stream_decode_dem_test COMMAND stream_decode_dem_test)
 endif()
 
@@ -208,9 +101,7 @@ else()
 endif()
 
 pybind11_add_module(qerasure_python
-    src/interop/python/pybindings.cpp
-    src/core/circuit/compile.cc
-    src/core/simulator/stream_sampler.cc
+    src/core/circuit/pybind_module.cc
     src/core/circuit/pybind_circuit.cc
     src/core/circuit/pybind_compile.cc
     src/core/decode/pybind_surf_dem_builder.cc
@@ -219,4 +110,4 @@ pybind11_add_module(qerasure_python
 )
 
 target_link_libraries(qerasure_python PRIVATE qerasure qerasure_stim)
-target_include_directories(qerasure_python PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/src)
+target_include_directories(qerasure_python PRIVATE ${CMAKE_SOURCE_DIR}/src)
