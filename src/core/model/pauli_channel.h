@@ -1,5 +1,7 @@
 # pragma once
 
+#include <cstdint>
+#include <limits>
 #include <stdexcept>
 
 struct PauliChannel {
