@@ -8,6 +8,8 @@ endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# Required when linking static libraries into the pybind11 shared module.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 include(FetchContent)
 option(QERASURE_BUILD_PYTHON "Build Python extension module (qerasure_python)." OFF)
