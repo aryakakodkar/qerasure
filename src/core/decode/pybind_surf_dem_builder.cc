@@ -18,6 +18,7 @@ void bind_surf_dem_builder(py::module_& m) {
 			[](const decode::SurfDemBuilder& decoder,
 			   const std::vector<uint8_t>& check_results,
 			   bool verbose) {
+				py::gil_scoped_release release;
 				return decoder.build_decoded_circuit(&check_results, verbose).str();
 			},
 			py::arg("check_results"), py::arg("verbose") = false)
@@ -26,6 +27,7 @@ void bind_surf_dem_builder(py::module_& m) {
 			[](const decode::SurfDemBuilder& decoder,
 			   const std::vector<uint8_t>& check_results,
 			   bool verbose) {
+				py::gil_scoped_release release;
 				return decoder.build_decoded_circuit_text(&check_results, verbose);
 			},
 			py::arg("check_results"), py::arg("verbose") = false)
@@ -33,9 +35,12 @@ void bind_surf_dem_builder(py::module_& m) {
 			"find_probability_violations",
 			[](const decode::SurfDemBuilder& decoder,
 			   const std::vector<uint8_t>& check_results) {
+				decode::SpreadInjectionBuckets buckets;
+				{
+					py::gil_scoped_release release;
+					buckets = decoder.compute_spread_injections(&check_results, /*verbose=*/false);
+				}
 				std::vector<py::dict> out;
-				const decode::SpreadInjectionBuckets buckets =
-					decoder.compute_spread_injections(&check_results, /*verbose=*/false);
 				for (uint32_t op_index = 0; op_index < buckets.size(); ++op_index) {
 					for (const auto& event : buckets[op_index]) {
 						const double p_x = std::clamp(event.p_x, 0.0, 1.0);
