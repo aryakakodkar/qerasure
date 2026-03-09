@@ -54,92 +54,46 @@ target_include_directories(qerasure
         ${CMAKE_SOURCE_DIR}/src
 )
 
-if(EXISTS "${CMAKE_SOURCE_DIR}/benchmarks/erasure_sampler_bench.cpp")
-  add_executable(erasure_sampler_bench
-      benchmarks/erasure_sampler_bench.cpp
-  )
-  target_link_libraries(erasure_sampler_bench PRIVATE qerasure)
-endif()
+set(QERASURE_BENCHMARK_SOURCES
+    benchmarks/bench_stream_sampler.cpp
+    benchmarks/bench_stream_decode.cpp
+)
 
-if(EXISTS "${CMAKE_SOURCE_DIR}/benchmarks/bench_stream_sampler.cpp")
-  add_executable(bench_stream_sampler
-      benchmarks/bench_stream_sampler.cpp
+foreach(benchmark_source IN LISTS QERASURE_BENCHMARK_SOURCES)
+  if(NOT EXISTS "${CMAKE_SOURCE_DIR}/${benchmark_source}")
+    message(STATUS "Skipping missing benchmark source: ${benchmark_source}")
+    continue()
+  endif()
+  get_filename_component(benchmark_name "${benchmark_source}" NAME_WE)
+  add_executable(${benchmark_name}
+      ${benchmark_source}
   )
-  target_link_libraries(bench_stream_sampler PRIVATE qerasure qerasure_stim)
-endif()
-
-if(EXISTS "${CMAKE_SOURCE_DIR}/benchmarks/bench_stream_decode.cpp")
-  add_executable(bench_stream_decode
-      benchmarks/bench_stream_decode.cpp
-  )
-  target_link_libraries(bench_stream_decode PRIVATE qerasure qerasure_stim)
-endif()
+  target_link_libraries(${benchmark_name} PRIVATE qerasure qerasure_stim)
+endforeach()
 
 include(CTest)
 if(BUILD_TESTING)
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/sampler_injector_trace_test.cpp")
-    add_executable(sampler_injector_trace_test
-        tests/sampler_injector_trace_test.cpp
-    )
-    target_link_libraries(sampler_injector_trace_test PRIVATE qerasure qerasure_stim)
-    add_test(NAME sampler_injector_trace_test COMMAND sampler_injector_trace_test)
-  endif()
+  set(QERASURE_TEST_SOURCES
+      tests/hmm_decoder_stream_test.cpp
+      tests/surf_dem_builder_trace_test.cpp
+      tests/stream_decode_dem_test.cpp
+      tests/observable_flip_artifact_test.cpp
+      tests/observable_flip_artifact_ancilla_test.cpp
+      tests/observable_flip_artifact_ancilla_no_spread_test.cpp
+  )
 
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/hmm_decoder_stream_test.cpp")
-    add_executable(hmm_decoder_stream_test
-        tests/hmm_decoder_stream_test.cpp
+  foreach(test_source IN LISTS QERASURE_TEST_SOURCES)
+    if(NOT EXISTS "${CMAKE_SOURCE_DIR}/${test_source}")
+      message(STATUS "Skipping missing test source: ${test_source}")
+      continue()
+    endif()
+    get_filename_component(test_name "${test_source}" NAME_WE)
+    add_executable(${test_name}
+        ${test_source}
     )
-    target_link_libraries(hmm_decoder_stream_test PRIVATE qerasure qerasure_stim)
-    add_test(NAME hmm_decoder_stream_test COMMAND hmm_decoder_stream_test)
-  endif()
-
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/surf_dem_builder_trace_test.cpp")
-    add_executable(surf_dem_builder_trace_test
-        tests/surf_dem_builder_trace_test.cpp
-    )
-    target_link_libraries(surf_dem_builder_trace_test PRIVATE qerasure qerasure_stim)
-    add_test(NAME surf_dem_builder_trace_test COMMAND surf_dem_builder_trace_test)
-  endif()
-
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/stream_decode_dem_test.cpp")
-    add_executable(stream_decode_dem_test
-        tests/stream_decode_dem_test.cpp
-    )
-    target_link_libraries(stream_decode_dem_test PRIVATE qerasure qerasure_stim)
-    add_test(NAME stream_decode_dem_test COMMAND stream_decode_dem_test)
-  endif()
-
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/observable_flip_artifact_test.cpp")
-    add_executable(observable_flip_artifact_test
-        tests/observable_flip_artifact_test.cpp
-    )
-    target_link_libraries(observable_flip_artifact_test PRIVATE qerasure qerasure_stim)
-    add_test(NAME observable_flip_artifact_test COMMAND observable_flip_artifact_test)
-  endif()
-
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/observable_flip_artifact_ancilla_test.cpp")
-    add_executable(observable_flip_artifact_ancilla_test
-        tests/observable_flip_artifact_ancilla_test.cpp
-    )
-    target_link_libraries(observable_flip_artifact_ancilla_test PRIVATE qerasure qerasure_stim)
-    add_test(NAME observable_flip_artifact_ancilla_test COMMAND observable_flip_artifact_ancilla_test)
-  endif()
-
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/observable_flip_artifact_ancilla_no_spread_test.cpp")
-    add_executable(observable_flip_artifact_ancilla_no_spread_test
-        tests/observable_flip_artifact_ancilla_no_spread_test.cpp
-    )
-    target_link_libraries(observable_flip_artifact_ancilla_no_spread_test PRIVATE qerasure qerasure_stim)
-    add_test(NAME observable_flip_artifact_ancilla_no_spread_test COMMAND observable_flip_artifact_ancilla_no_spread_test)
-  endif()
-
-  if(EXISTS "${CMAKE_SOURCE_DIR}/tests/perfect_check_pre_mr_zero_test.cpp")
-    add_executable(perfect_check_pre_mr_zero_test
-        tests/perfect_check_pre_mr_zero_test.cpp
-    )
-    target_link_libraries(perfect_check_pre_mr_zero_test PRIVATE qerasure qerasure_stim)
-    add_test(NAME perfect_check_pre_mr_zero_test COMMAND perfect_check_pre_mr_zero_test)
-  endif()
+    target_link_libraries(${test_name} PRIVATE qerasure qerasure_stim)
+    add_test(NAME ${test_name} COMMAND ${test_name})
+  endforeach()
 endif()
 
 if(QERASURE_BUILD_PYTHON)

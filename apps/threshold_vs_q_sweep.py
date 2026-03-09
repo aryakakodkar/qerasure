@@ -227,7 +227,7 @@ def main() -> None:
 		)
 	)
 	parser.add_argument("--configs", type=str, default="3,3;5,5;7,7")
-	parser.add_argument("--shots", type=int, default=10_000)
+	parser.add_argument("--shots", type=int, default=100_000)
 	parser.add_argument("--seed", type=int, default=random.randint(0, 2**32 - 1))
 	parser.add_argument("--points", type=int, default=10)
 	parser.add_argument("--p-min", type=float, default=1e-2)
