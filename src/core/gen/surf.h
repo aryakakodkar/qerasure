@@ -16,7 +16,8 @@ class SurfaceCodeRotated {
   circuit::ErasureCircuit build_circuit(uint32_t rounds, double erasure_prob,
                                         std::string erasable_qubits = "ALL",
                                         double reset_failure_prob = 0.0,
-                                        bool ecr_after_each_step = false);
+                                        bool ecr_after_each_step = false,
+                                        bool single_qubit_errors = false);
 
  private:
   RotatedSurfaceCode code_;

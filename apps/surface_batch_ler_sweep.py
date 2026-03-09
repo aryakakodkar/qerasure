@@ -78,12 +78,14 @@ def run_single_point(
     sample_threads: int,
     decode_threads: int,
     max_batch_bytes: int,
+    single_qubit_errors: bool,
 ) -> dict:
     circuit = qe.SurfaceCodeRotated(distance).build_circuit(
         rounds=rounds,
         erasure_prob=p_tqe,
         erasable_qubits="ALL",
         reset_failure_prob=0.0,
+        single_qubit_errors=single_qubit_errors,
     )
 
     model = qe.ErasureModel(
@@ -95,8 +97,8 @@ def run_single_point(
             qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
-    model.check_false_negative_prob = 0.02
-    model.check_false_positive_prob = 0.02
+    model.check_false_negative_prob = 0.00
+    model.check_false_positive_prob = 0.00
 
     compiled = qe.CompiledErasureProgram(circuit, model)
     sampler = qe.StreamSampler(compiled)
@@ -152,6 +154,12 @@ def main() -> None:
     parser.add_argument("--decode-threads", type=int, default=None)
     parser.add_argument("--max-batch-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument(
+        "--single-qubit-errors",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Include single-qubit erasure onsets after H and ECR operations.",
+    )
+    parser.add_argument(
         "--json-out",
         type=Path,
         default=REPO_ROOT / "apps" / "results" / "surface_batch_ler_sweep.json",
@@ -181,6 +189,7 @@ def main() -> None:
                 sample_threads=args.num_threads,
                 decode_threads=decode_threads,
                 max_batch_bytes=args.max_batch_bytes,
+                single_qubit_errors=args.single_qubit_errors,
             )
             rows.append(row)
             print(
