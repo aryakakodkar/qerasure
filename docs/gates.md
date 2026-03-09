@@ -15,7 +15,7 @@ Stim-native gates (`H`, `CX`, `M`, `R`, `MR`, `X_ERROR`, `Z_ERROR`, `DEPOLARIZE1
 ## Common Rules
 - Every instruction must have at least one target.
 - Two-qubit instructions require an even number of targets (`ERASE2`, `ERASE2_ANY`).
-- Probability arguments must be in `[0, 1]`.
+- Probability arguments must be in [0, 1].
 - Erasure behavior depends on the `ErasureModel` passed into `CompiledErasureProgram`:
   - `onset` channel
   - `spread.control_spread` and `spread.target_spread`

@@ -266,13 +266,15 @@ SampledBatch ErasureSampler::sample(const SamplerParams& params) {
                 if (last_check_result[reset.qubit_index] == 0) {
                     continue;
                 }
-                PauliOperation sampled_op = PauliOperation::I;
-                if (rng_.next_u64() <= reset.reset_failure_threshold) {
-                    sampled_op = from_internal_pauli_operation(
-                        internal::sample_thresholded_pauli_channel(reset.reset_channel, &rng_));
+                const bool reset_failed = rng_.next_u64() <= reset.reset_failure_threshold;
+                if (reset_failed) {
+                    last_check_result[reset.qubit_index] = 0; // clear check outcome after attempted reset
+                    continue;
                 }
+                PauliOperation sampled_op = from_internal_pauli_operation(
+                    internal::sample_thresholded_pauli_channel(reset.reset_channel, &rng_));
                 group.resets.push_back({reset.qubit_index, sampled_op});
-                current_erasure_state[reset.qubit_index] = 0; // reset performed, mark qubit as unerased
+                current_erasure_state[reset.qubit_index] = 0; // successful reset clears erasure
                 last_check_result[reset.qubit_index] = 0; // clear most recent check outcome after reset
             }
         }

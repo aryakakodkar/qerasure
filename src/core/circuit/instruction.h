@@ -82,6 +82,7 @@ inline bool is_erasure_reset_op(OpCode op) {
     return op == OpCode::ECR || op == OpCode::COND_ER;
 }
 
+// These operations should be skippped if any target is erased
 inline bool is_erasure_skippable_op(OpCode op) {
     return op == OpCode::X_ERROR || op == OpCode::Z_ERROR || op == OpCode::DEPOLARIZE1;
 }

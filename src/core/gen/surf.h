@@ -15,7 +15,8 @@ class SurfaceCodeRotated {
   // TODO: Add support for custom erasure check and reset frequencies.
   circuit::ErasureCircuit build_circuit(uint32_t rounds, double erasure_prob,
                                         std::string erasable_qubits = "ALL",
-                                        double reset_failure_prob = 0.0);
+                                        double reset_failure_prob = 0.0,
+                                        bool ecr_after_each_step = false);
 
  private:
   RotatedSurfaceCode code_;
