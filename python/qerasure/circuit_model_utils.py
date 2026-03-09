@@ -559,6 +559,68 @@ class SurfaceCodeBatchDecoder:
             return np.zeros((shots, 0), dtype=np.uint8)
         return predictions
 
+    def _decode_chunk_grouped_parallel(self, det_chunk, check_chunk, num_threads: int):
+        """Decode one shot-chunk by grouping once, then decoding groups in parallel."""
+        import numpy as np
+        import pymatching as pm
+        from concurrent.futures import ThreadPoolExecutor
+
+        shots = int(det_chunk.shape[0])
+        if shots == 0:
+            return np.zeros((0, 0), dtype=np.uint8)
+
+        packed = np.packbits(check_chunk, axis=1, bitorder="little")
+        groups = {}
+        for local_idx in range(packed.shape[0]):
+            key = packed[local_idx].tobytes()
+            groups.setdefault(key, []).append(local_idx)
+
+        group_items = list(groups.items())
+        workers = min(max(1, int(num_threads)), len(group_items))
+        if workers <= 1:
+            return self._decode_chunk_grouped(det_chunk, check_chunk, self._dem_builder)
+
+        shard_size = (len(group_items) + workers - 1) // workers
+        shards = [
+            group_items[i : i + shard_size] for i in range(0, len(group_items), shard_size)
+        ]
+
+        def worker_decode(shard):
+            local = []
+            dem_builder = SurfDemBuilder(self._cpp_program)
+            for key, local_indices in shard:
+                if check_chunk.shape[1] == 0:
+                    check_row = np.zeros((0,), dtype=np.uint8)
+                else:
+                    packed_row = np.frombuffer(key, dtype=np.uint8)
+                    unpacked = np.unpackbits(packed_row, bitorder="little")
+                    check_row = unpacked[: check_chunk.shape[1]].astype(np.uint8, copy=False)
+
+                decoded_circuit = dem_builder.build_decoded_circuit(check_row, verbose=False)
+                decoded_dem = decoded_circuit.detector_error_model(
+                    decompose_errors=True,
+                    approximate_disjoint_errors=True,
+                )
+                matching = pm.Matching.from_detector_error_model(decoded_dem)
+                group_detectors = det_chunk[np.asarray(local_indices, dtype=np.int64)]
+                group_preds = self._decode_group_with_matching(group_detectors, matching)
+                local.append((local_indices, group_preds))
+            return local
+
+        decoded_groups = []
+        with ThreadPoolExecutor(max_workers=len(shards)) as pool:
+            futures = [pool.submit(worker_decode, shard) for shard in shards]
+            for fut in futures:
+                decoded_groups.extend(fut.result())
+
+        max_width = max((pred.shape[1] for _, pred in decoded_groups), default=0)
+        predictions = np.zeros((shots, max_width), dtype=np.uint8)
+        for local_indices, group_preds in decoded_groups:
+            n = min(predictions.shape[1], group_preds.shape[1])
+            for group_pos, local_idx in enumerate(local_indices):
+                predictions[local_idx, :n] = group_preds[group_pos, :n]
+        return predictions
+
     def _decode_range(
         self,
         dets,
@@ -604,13 +666,8 @@ class SurfaceCodeBatchDecoder:
         return range_preds
 
     def decode_batch(self, detector_samples, check_flags, num_threads: int = 1):
-        """Decode a full batch of shots.
-
-        The batch is split into contiguous shot-ranges and each range is decoded
-        independently in parallel when `num_threads > 1`.
-        """
+        """Decode a full batch of shots."""
         import numpy as np
-        from concurrent.futures import ThreadPoolExecutor
 
         dets = np.asarray(detector_samples, dtype=np.uint8)
         checks = np.asarray(check_flags, dtype=np.uint8)
@@ -632,40 +689,36 @@ class SurfaceCodeBatchDecoder:
             return np.zeros((0, 0), dtype=np.uint8)
 
         shots_per_chunk = self._compute_shots_per_chunk(dets.shape[1], checks.shape[1])
-        workers = min(int(num_threads), shots)
-        range_size = (shots + workers - 1) // workers
-        ranges = []
-        for i in range(workers):
-            start = i * range_size
-            end = min(shots, start + range_size)
-            if start < end:
-                ranges.append((start, end))
+        predictions = None
+        write_offset = 0
+        for chunk_start in range(0, shots, shots_per_chunk):
+            chunk_end = min(shots, chunk_start + shots_per_chunk)
+            det_chunk = dets[chunk_start:chunk_end]
+            check_chunk = checks[chunk_start:chunk_end]
 
-        if len(ranges) == 1:
-            return self._decode_range(
-                dets,
-                checks,
-                ranges[0][0],
-                ranges[0][1],
-                shots_per_chunk,
-                dem_builder=self._dem_builder,
-            )
+            if int(num_threads) == 1:
+                chunk_preds = self._decode_chunk_grouped(
+                    det_chunk, check_chunk, self._dem_builder
+                )
+            else:
+                chunk_preds = self._decode_chunk_grouped_parallel(
+                    det_chunk, check_chunk, int(num_threads)
+                )
 
-        results = []
-        with ThreadPoolExecutor(max_workers=len(ranges)) as pool:
-            futures = [
-                pool.submit(self._decode_range, dets, checks, start, end, shots_per_chunk)
-                for start, end in ranges
-            ]
-            for (start, end), fut in zip(ranges, futures):
-                results.append((start, end, fut.result()))
+            if predictions is None:
+                predictions = np.zeros((shots, max(1, int(chunk_preds.shape[1]))), dtype=np.uint8)
+            elif chunk_preds.shape[1] > predictions.shape[1]:
+                grown = np.zeros((shots, int(chunk_preds.shape[1])), dtype=np.uint8)
+                grown[:, : predictions.shape[1]] = predictions
+                predictions = grown
 
-        max_width = max((pred.shape[1] for _, _, pred in results), default=0)
-        predictions = np.zeros((shots, max_width), dtype=np.uint8)
-        for start, end, pred in results:
-            if pred.shape[1] == 0:
-                continue
-            predictions[start:end, : pred.shape[1]] = pred
+            span = chunk_end - chunk_start
+            n = min(predictions.shape[1], chunk_preds.shape[1])
+            predictions[write_offset : write_offset + span, :n] = chunk_preds[:, :n]
+            write_offset += span
+
+        if predictions is None:
+            return np.zeros((shots, 0), dtype=np.uint8)
         return predictions
 
 
