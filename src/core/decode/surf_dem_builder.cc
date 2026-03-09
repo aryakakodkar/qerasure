@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace qerasure::decode {
 
@@ -373,6 +374,131 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 					{emit_op_index, entry.target_qubit, entry.p_x, entry.p_y, entry.p_z});
 			}
 		}
+	}
+
+	// Tail correction for missed final checks:
+	// estimate per-qubit no-erasure probability up to the final measurement by
+	// carrying forward:
+	// - no-onset factors (1 - p_onset) over onset opportunities, and
+	// - no-erasure check-likelihood factors from observed check bits.
+	//
+	// This captures cases where a qubit remains erased despite an unflagged final check.
+	const uint32_t num_qubits = program_.max_qubit_index() + 1;
+	std::vector<std::vector<uint32_t>> qubit_check_events(num_qubits);
+	qubit_check_events.assign(num_qubits, {});
+	std::unordered_map<uint64_t, uint32_t> check_event_by_qubit_op;
+	check_event_by_qubit_op.reserve(check_results->size() * 2 + 1);
+	for (uint32_t check_event_index = 0; check_event_index < check_results->size(); ++check_event_index) {
+		const uint32_t qubit = check_event_to_qubit_[check_event_index];
+		const uint32_t op_index = check_event_to_op_index_[check_event_index];
+		qubit_check_events[qubit].push_back(check_event_index);
+		const uint64_t key = (static_cast<uint64_t>(op_index) << 32) | qubit;
+		check_event_by_qubit_op[key] = check_event_index;
+	}
+
+	for (uint32_t qubit = 0; qubit < num_qubits; ++qubit) {
+		const std::vector<uint32_t>& qubit_ops = program_.qubit_operation_indices.at(qubit);
+		if (qubit_ops.empty()) {
+			continue;
+		}
+
+		// Find final measurement operation touching this qubit.
+		int32_t final_meas_op = -1;
+		for (auto it = qubit_ops.rbegin(); it != qubit_ops.rend(); ++it) {
+			const uint32_t op_index = *it;
+			const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
+			if (!op_group.stim_instruction.has_value()) {
+				continue;
+			}
+			const circuit::Instruction& instr = op_group.stim_instruction.value();
+			if (!circuit::is_measurement_op(instr.op)) {
+				continue;
+			}
+			if (std::find(instr.targets.begin(), instr.targets.end(), qubit) == instr.targets.end()) {
+				continue;
+			}
+			final_meas_op = static_cast<int32_t>(op_index);
+			break;
+		}
+		if (final_meas_op < 0) {
+			continue;
+		}
+
+		uint32_t start_op = 0;
+		const std::vector<uint32_t>& local_check_events = qubit_check_events[qubit];
+		if (!local_check_events.empty()) {
+			const uint32_t last_local = static_cast<uint32_t>(local_check_events.size() - 1);
+			uint32_t lookback_local = 0;
+			if (program_.max_persistence() <= last_local) {
+				lookback_local = last_local - program_.max_persistence() + 1;
+			}
+			const uint32_t lookback_event = local_check_events[lookback_local];
+			uint32_t lookback_op = check_event_to_op_index_[lookback_event];
+
+			int32_t latest_flagged_event = -1;
+			for (const uint32_t event_idx : local_check_events) {
+				if ((*check_results)[event_idx] == 1) {
+					latest_flagged_event = static_cast<int32_t>(event_idx);
+				}
+			}
+			if (latest_flagged_event >= 0) {
+				const uint32_t flagged_op =
+					check_event_to_op_index_[static_cast<uint32_t>(latest_flagged_event)];
+				// Start after the latest flagged check/reset point.
+				lookback_op = std::max(lookback_op, flagged_op + 1);
+			}
+			start_op = lookback_op;
+		}
+
+		double p_no_erasure = 1.0;
+		auto start_it = std::lower_bound(qubit_ops.begin(), qubit_ops.end(), start_op);
+		auto end_it = std::upper_bound(
+			start_it, qubit_ops.end(), static_cast<uint32_t>(final_meas_op));
+		for (auto it = start_it; it != end_it; ++it) {
+			const uint32_t op_index = *it;
+			const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
+
+			for (const auto& onset : op_group.onsets) {
+				if (onset.qubit_index == qubit) {
+					p_no_erasure *= (1.0 - onset.probability);
+				}
+			}
+			for (const auto& onset_pair : op_group.onset_pairs) {
+				if (onset_pair.qubit_index1 == qubit || onset_pair.qubit_index2 == qubit) {
+					p_no_erasure *= (1.0 - 0.5 * onset_pair.probability);
+				}
+			}
+			for (const auto& check : op_group.checks) {
+				if (check.qubit_index != qubit) {
+					continue;
+				}
+				const uint64_t key = (static_cast<uint64_t>(op_index) << 32) | qubit;
+				const auto idx_it = check_event_by_qubit_op.find(key);
+				if (idx_it == check_event_by_qubit_op.end()) {
+					throw std::logic_error("missing check event index for qubit/op in DEM builder");
+				}
+				const uint8_t observed = (*check_results)[idx_it->second];
+				if (observed == 1) {
+					p_no_erasure *= check.false_positive_probability;
+				} else if (observed == 0) {
+					p_no_erasure *= (1.0 - check.false_positive_probability);
+				} else {
+					throw std::invalid_argument("check_results must be binary");
+				}
+				break;
+			}
+		}
+
+		p_no_erasure = std::clamp(p_no_erasure, 0.0, 1.0);
+		const double p_meas_x = 1.0 - p_no_erasure;
+		if (p_meas_x <= 0.0) {
+			continue;
+		}
+		const uint32_t pre_emit_op_index =
+			(final_meas_op == 0) ? op_to_emit_op_index_[0]
+								 : op_to_emit_op_index_[static_cast<uint32_t>(final_meas_op - 1)];
+		buckets[pre_emit_op_index].push_back(
+			{pre_emit_op_index, qubit, p_meas_x, 0.0, 0.0});
 	}
 
 	return buckets;
