@@ -32,8 +32,7 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
     std::fill(check_results->begin(), check_results->end(), 0);
     size_t check_idx = 0;
 
-    for (uint32_t op_index = 0; op_index < program.operation_groups.size(); ++op_index) {
-        const circuit::OperationGroup& op_group = program.operation_groups[op_index];
+    for (const circuit::OperationGroup& op_group : program.operation_groups) {
         if (op_group.stim_instruction.has_value()) {
             if (circuit::is_measurement_op(op_group.stim_instruction->op)) {
                 // if a qubit is erased, its measurement outcome should be random
@@ -143,11 +142,7 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
                     (*last_check_result)[check.qubit_index] = 0;
                 }
             } else {
-                const bool is_final_check_for_qubit =
-                    program.qubit_last_check_operation_index[check.qubit_index] ==
-                    static_cast<int32_t>(op_index);
                 const bool force_true_positive =
-                    is_final_check_for_qubit ||
                     (*current_erasure_state)[check.qubit_index] >= max_persistence;
                 if (force_true_positive) {
                     (*check_results)[check_idx++] = 1;

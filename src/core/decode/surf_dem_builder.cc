@@ -120,6 +120,7 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 			throw std::invalid_argument("SurfDemBuilder::build_decoded_circuit expects binary check results");
 		}
 
+		// Look up the qubit and check operation for this flagged check event.
 		const circuit::CheckLookbackLink& link = program_.check_lookback_links.at(check_event_index);
 		const uint32_t qubit = check_event_to_qubit_[check_event_index];
 		const uint32_t check_op = check_event_to_op_index_[check_event_index];
