@@ -75,7 +75,8 @@ def run_single_point(
     shots: int,
     p_tqe: float,
     seed: int,
-    num_threads: int,
+    sample_threads: int,
+    decode_threads: int,
     max_batch_bytes: int,
 ) -> dict:
     circuit = qe.SurfaceCodeRotated(distance).build_circuit(
@@ -94,8 +95,8 @@ def run_single_point(
             qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
-    model.check_false_negative_prob = 0.02
-    model.check_false_positive_prob = 0.02
+    model.check_false_negative_prob = 0.0
+    model.check_false_positive_prob = 0.0
 
     compiled = qe.CompiledErasureProgram(circuit, model)
     sampler = qe.StreamSampler(compiled)
@@ -107,9 +108,9 @@ def run_single_point(
     )
 
     t0 = time.perf_counter()
-    dets, obs, checks = sampler.sample(num_shots=shots, seed=seed, num_threads=num_threads)
+    dets, obs, checks = sampler.sample(num_shots=shots, seed=seed, num_threads=sample_threads)
     t1 = time.perf_counter()
-    predictions = grouped_decoder.decode_batch(dets, checks)
+    predictions = grouped_decoder.decode_batch(dets, checks, num_threads=decode_threads)
     t2 = time.perf_counter()
 
     truths = obs if obs.ndim == 2 else obs[:, None]
@@ -148,6 +149,7 @@ def main() -> None:
     parser.add_argument("--p-max", type=float, default=1e-1)
     parser.add_argument("--p-values", type=str, default=None)
     parser.add_argument("--num-threads", type=int, default=1)
+    parser.add_argument("--decode-threads", type=int, default=None)
     parser.add_argument("--max-batch-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument(
         "--json-out",
@@ -163,6 +165,7 @@ def main() -> None:
 
     configs = parse_configs(args.configs)
     p_values = make_p_values(args.p_values, args.p_min, args.p_max, args.points)
+    decode_threads = args.decode_threads if args.decode_threads is not None else args.num_threads
 
     rows: list[dict] = []
     t0 = time.perf_counter()
@@ -175,7 +178,8 @@ def main() -> None:
                 shots=args.shots,
                 p_tqe=float(p_tqe),
                 seed=seed,
-                num_threads=args.num_threads,
+                sample_threads=args.num_threads,
+                decode_threads=decode_threads,
                 max_batch_bytes=args.max_batch_bytes,
             )
             rows.append(row)
