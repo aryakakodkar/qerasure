@@ -226,17 +226,17 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
             const uint32_t check_event = local_check_events[local_idx];
             CheckLookbackLink& link = check_lookback_links[check_event];
             if (max_persistence_ > local_idx) {
-                // No (n - max_persistence_) check for this local event.
+                // This check is one of the first max_persistence checks, so there is no lookback check to link to
                 continue;
             }
 
+            // Find the check which was max_persistence checks ago; this is the most recent lookback check that was certainly correct
             const uint32_t lookback_local_idx = local_idx - max_persistence_;
             const uint32_t lookback_event = local_check_events[lookback_local_idx];
             const uint32_t lookback_op = local_check_ops[lookback_local_idx];
             link.lookback_check_event_index = static_cast<int32_t>(lookback_event);
 
-            const auto reset_it =
-                std::lower_bound(local_reset_ops.begin(), local_reset_ops.end(), lookback_op);
+            const auto reset_it = std::lower_bound(local_reset_ops.begin(), local_reset_ops.end(), lookback_op);
             if (reset_it != local_reset_ops.end()) {
                 link.reset_op_after_lookback = static_cast<int32_t>(*reset_it);
             }

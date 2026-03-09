@@ -154,6 +154,9 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 		}
 
 		double p_unerased = 1.0;
+		// Likelihood of the observed check pattern in this window under a no-erasure path.
+		// For fixed false-positive rate x and a checks, this reduces to (1-x)^(a-1) * x.
+		double no_erasure_check_likelihood = 1.0;
 		std::vector<OnsetBranch> onset_branches;
 		onset_branches.reserve(end_offset - start_offset + 1);
 
@@ -188,6 +191,7 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 			for (const auto& check : op_group.checks) {
 				if (check.qubit_index == qubit) {
 					const double false_negative_prob = check.false_negative_probability;
+					const double false_positive_prob = check.false_positive_probability;
 					const bool is_flagged_check = (op_index == check_op);
 					for (auto& branch : onset_branches) {
 						if (!is_flagged_check) {
@@ -204,6 +208,10 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 						const double flag_prob = forced_detection ? 1.0 : (1.0 - false_negative_prob);
 						branch.probability *= flag_prob;
 					}
+					// Under no-erasure, non-flagged checks are true-negatives and the flagged
+					// check is a false-positive.
+					no_erasure_check_likelihood *=
+						is_flagged_check ? false_positive_prob : (1.0 - false_positive_prob);
 					break;
 				}
 			}
@@ -213,6 +221,8 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 		for (const auto& branch : onset_branches) {
 			normalizer += branch.probability;
 		}
+		const double no_erasure_mass = p_unerased * no_erasure_check_likelihood;
+		normalizer += no_erasure_mass;
 		if (normalizer > 0.0) {
 			for (auto& branch : onset_branches) {
 				branch.probability /= normalizer;
@@ -225,7 +235,8 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 					  << " start_offset=" << program_.qubit_operation_indices.at(qubit)[start_offset]
 					  << " end_offset=" << program_.qubit_operation_indices.at(qubit)[end_offset]
 					  << " lookback_check=" << link.lookback_check_event_index
-					  << " reset_after_lookback=" << link.reset_op_after_lookback << "\n";
+					  << " reset_after_lookback=" << link.reset_op_after_lookback
+					  << " no_erasure_mass=" << no_erasure_mass << "\n";
 			if (onset_branches.empty()) {
 				std::cout << "  posterior_onset_probs: (none)\n";
 			} else {
