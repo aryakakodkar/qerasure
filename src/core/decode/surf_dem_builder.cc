@@ -128,16 +128,17 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 		}
 
 		// For every flagged check, apply reset-channel contribution on that same qubit.
-		// Runtime sampler semantics: reset noise is applied only if reset failure occurs.
-		// Therefore net injected probabilities are p_fail * (p_x, p_y, p_z).
+		// Runtime sampler semantics: reset noise is applied when reset succeeds.
+		// Therefore net injected probabilities are (1 - p_fail) * (p_x, p_y, p_z).
 		const circuit::OperationGroup& check_group = program_.operation_groups[check_op];
 		for (const auto& reset : check_group.resets) {
 			if (reset.qubit_index != qubit) {
 				continue;
 			}
-			const double p_x = reset.reset_failure_probability * reset.reset_probability_channel.p_x;
-			const double p_y = reset.reset_failure_probability * reset.reset_probability_channel.p_y;
-			const double p_z = reset.reset_failure_probability * reset.reset_probability_channel.p_z;
+			const double p_reset_success = 1.0 - reset.reset_failure_probability;
+			const double p_x = p_reset_success * reset.reset_probability_channel.p_x;
+			const double p_y = p_reset_success * reset.reset_probability_channel.p_y;
+			const double p_z = p_reset_success * reset.reset_probability_channel.p_z;
 			if (p_x <= 0.0 && p_y <= 0.0 && p_z <= 0.0) {
 				continue;
 			}
@@ -325,6 +326,25 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 					const double p_z = p_erased_by_op *
 									   spread.spread_probability_channel.p_z;
 					accumulate_channel(spread.aff_qubit_index, p_x, p_y, p_z);
+				}
+			}
+
+			// Measurement randomization translation:
+			// inject X before measuring qubits that may be erased.
+			// Requested model: P(X before measurement) = 0.5 * P(erased by that point).
+			const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
+			if (op_group.stim_instruction.has_value() &&
+				circuit::is_measurement_op(op_group.stim_instruction->op) &&
+				p_erased_by_op > 0.0) {
+				const auto& targets = op_group.stim_instruction->targets;
+				if (std::find(targets.begin(), targets.end(), qubit) != targets.end()) {
+					const double p_meas_x = 0.5 * p_erased_by_op;
+					if (p_meas_x > 0.0) {
+						const uint32_t pre_emit_op_index =
+							(op_index == 0) ? op_to_emit_op_index_[op_index]
+											: op_to_emit_op_index_[op_index - 1];
+						merge_into_emit_bucket(pre_emit_op_index, qubit, p_meas_x, 0.0, 0.0);
+					}
 				}
 			}
 

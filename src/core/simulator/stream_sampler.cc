@@ -36,7 +36,16 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
         const circuit::OperationGroup& op_group = program.operation_groups[op_index];
         if (op_group.stim_instruction.has_value()) {
             if (circuit::is_measurement_op(op_group.stim_instruction->op)) {
-                // TODO: Add probabilistic error
+                // if a qubit is erased, its measurement outcome should be random
+                for (uint32_t target : op_group.stim_instruction->targets) {
+                    if ((*current_erasure_state)[target] == 1) {
+                        internal::append_mapped_stim_instruction(circuit::OpCode::X_ERROR,
+                                                                 {target},
+                                                                 0.5,
+                                                                 &circuit);
+                    }
+                }
+
                 internal::append_mapped_stim_instruction(*op_group.stim_instruction, &circuit);
             } else if (circuit::is_erasure_skippable_op(op_group.stim_instruction->op)) {
                 std::vector<uint32_t> non_erased_targets;
@@ -159,12 +168,13 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
         for (const auto& reset : op_group.resets) {
             // Reset is driven only by the most recent check outcome.
             if ((*last_check_result)[reset.qubit_index] == 1) {
-                if (rng->next_u64() <= reset.reset_failure_threshold) {
+                const bool reset_failed = rng->next_u64() <= reset.reset_failure_threshold;
+                if (!reset_failed) {
                     internal::PauliOperation sampled_op =
                         internal::sample_thresholded_pauli_channel(reset.reset_channel, rng);
                     internal::append_mapped_pauli_operation(reset.qubit_index, sampled_op, &circuit);
+                    (*current_erasure_state)[reset.qubit_index] = 0;  // successful reset clears erasure
                 }
-                (*current_erasure_state)[reset.qubit_index] = 0;  // reset performed, mark qubit as unerased
                 (*last_check_result)[reset.qubit_index] = 0;      // clear most recent check outcome after reset
             }
         }

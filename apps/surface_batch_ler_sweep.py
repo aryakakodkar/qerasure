@@ -81,7 +81,7 @@ def run_single_point(
     circuit = qe.SurfaceCodeRotated(distance).build_circuit(
         rounds=rounds,
         erasure_prob=p_tqe,
-        erasable_qubits="DATA",
+        erasable_qubits="ALL",
         reset_failure_prob=0.0,
     )
 
@@ -90,8 +90,8 @@ def run_single_point(
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.TQGSpreadModel(
-            qe.PauliChannel(0.5, 0.0, 0.0),
-            qe.PauliChannel(0.0, 0.0, 0.5),
+            qe.PauliChannel(0.25, 0.25, 0.25),
+            qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
     model.check_false_negative_prob = 0.02
