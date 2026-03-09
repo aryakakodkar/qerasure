@@ -46,8 +46,8 @@ def run_benchmark(
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.TQGSpreadModel(
-            qe.PauliChannel(0.5, 0.0, 0.0),
-            qe.PauliChannel(0.0, 0.0, 0.5),
+            qe.PauliChannel(0.25, 0.25, 0.25),
+            qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
     model.check_false_negative_prob = p_fn
@@ -120,7 +120,7 @@ def main() -> None:
     parser.add_argument("--p-fp", type=float, default=0.0)
     parser.add_argument("--max-persistence", type=int, default=2)
     parser.add_argument("--reset-failure-prob", type=float, default=0.0)
-    parser.add_argument("--erasable-qubits", type=str, default="DATA")
+    parser.add_argument("--erasable-qubits", type=str, default="ALL")
     parser.add_argument("--num-threads", type=int, default=1)
     parser.add_argument("--max-batch-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument(
