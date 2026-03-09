@@ -95,8 +95,8 @@ def run_single_point(
             qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
-    model.check_false_negative_prob = 0.00
-    model.check_false_positive_prob = 0.005
+    model.check_false_negative_prob = 0.02
+    model.check_false_positive_prob = 0.02
 
     compiled = qe.CompiledErasureProgram(circuit, model)
     sampler = qe.StreamSampler(compiled)
