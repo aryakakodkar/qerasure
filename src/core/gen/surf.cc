@@ -63,7 +63,8 @@ SurfaceCodeRotated::SurfaceCodeRotated(uint32_t distance) : code_(distance) {}
 circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, double erasure_prob,
                                                           std::string erasable_qubits,
                                                           double reset_failure_prob,
-                                                          bool ecr_after_each_step) {
+                                                          bool ecr_after_each_step,
+                                                          bool single_qubit_errors) {
   if (rounds == 0) {
     throw std::invalid_argument("rounds must be > 0");
   }
@@ -154,6 +155,9 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
 
   for (std::size_t round = 0; round < rounds; ++round) {
     circuit.append(circuit::OpCode::H, x_ancillas);
+    if (single_qubit_errors && !x_ancillas.empty()) {
+      circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
+    }
 
     for (std::size_t step = 0; step < 4; ++step) {
       const std::size_t step_start = step * gates_per_step;
@@ -210,12 +214,21 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
       }
       if (ecr_after_each_step) {
         circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
+        if (single_qubit_errors && !erasable_targets.empty()) {
+          circuit.append(circuit::OpCode::ERASE, erasable_targets, erasure_prob);
+        }
       }
     }
 
     circuit.append(circuit::OpCode::H, x_ancillas);
+    if (single_qubit_errors && !x_ancillas.empty()) {
+      circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
+    }
     if (!ecr_after_each_step) {
       circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
+      if (single_qubit_errors && !erasable_targets.empty()) {
+        circuit.append(circuit::OpCode::ERASE, erasable_targets, erasure_prob);
+      }
     }
     circuit.append(circuit::OpCode::MR, all_ancillas);
     append_round_detectors(&circuit, num_x_anc, num_z_anc, num_anc, round);
