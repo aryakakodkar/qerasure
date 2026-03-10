@@ -98,7 +98,7 @@ def run_single_point(
             qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
-    model.check_false_negative_prob = 0.0
+    model.check_false_negative_prob = 0.01
     model.check_false_positive_prob = 0.0
 
     compiled = qe.CompiledErasureProgram(circuit, model)
