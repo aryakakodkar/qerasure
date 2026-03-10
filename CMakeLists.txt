@@ -78,6 +78,7 @@ if(BUILD_TESTING)
   set(QERASURE_TEST_SOURCES
       tests/hmm_decoder_stream_test.cpp
       tests/surf_dem_builder_trace_test.cpp
+      tests/surf_post_clifford_pauli_test.cpp
       tests/stream_decode_dem_test.cpp
       tests/observable_flip_artifact_test.cpp
       tests/observable_flip_artifact_ancilla_test.cpp
