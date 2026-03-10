@@ -86,7 +86,7 @@ def run_single_point(
         erasable_qubits="ALL",
         reset_failure_prob=0.0,
         single_qubit_errors=single_qubit_errors,
-        post_clifford_pauli_prob = 0.005
+        post_clifford_pauli_prob = 0.00
     )
 
     model = qe.ErasureModel(
@@ -98,8 +98,8 @@ def run_single_point(
             qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
-    model.check_false_negative_prob = 0.01
-    model.check_false_positive_prob = 0.01
+    model.check_false_negative_prob = 0.0
+    model.check_false_positive_prob = 0.0
 
     compiled = qe.CompiledErasureProgram(circuit, model)
     sampler = qe.StreamSampler(compiled)
