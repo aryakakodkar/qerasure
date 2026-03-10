@@ -32,6 +32,7 @@ def run_benchmark(
     reset_failure_prob: float,
     erasable_qubits: str,
     num_threads: int,
+    decode_threads: int,
     max_batch_bytes: int,
 ) -> dict:
     circuit = qe.SurfaceCodeRotated(distance).build_circuit(
@@ -67,7 +68,7 @@ def run_benchmark(
     t1 = time.perf_counter()
 
     t2 = time.perf_counter()
-    predictions = grouped_decoder.decode_batch(dets, checks)
+    predictions = grouped_decoder.decode_batch(dets, checks, num_threads=decode_threads)
     t3 = time.perf_counter()
 
     truths = obs if obs.ndim == 2 else obs[:, None]
@@ -94,6 +95,7 @@ def run_benchmark(
         "max_persistence": max_persistence,
         "reset_failure_prob": reset_failure_prob,
         "num_threads": num_threads,
+        "decode_threads": decode_threads,
         "max_batch_bytes": max_batch_bytes,
         "sample_time_s": sample_s,
         "decode_time_s": decode_s,
@@ -122,6 +124,7 @@ def main() -> None:
     parser.add_argument("--reset-failure-prob", type=float, default=0.0)
     parser.add_argument("--erasable-qubits", type=str, default="ALL")
     parser.add_argument("--num-threads", type=int, default=1)
+    parser.add_argument("--decode-threads", type=int, default=None)
     parser.add_argument("--max-batch-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument(
         "--json-out",
@@ -142,6 +145,7 @@ def main() -> None:
         reset_failure_prob=args.reset_failure_prob,
         erasable_qubits=args.erasable_qubits,
         num_threads=args.num_threads,
+        decode_threads=args.decode_threads if args.decode_threads is not None else args.num_threads,
         max_batch_bytes=args.max_batch_bytes,
     )
 

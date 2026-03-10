@@ -2,16 +2,13 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import json
 import random
 import sys
 import time
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -292,6 +289,25 @@ def run_single_point(
     }
 
 
+def run_single_point_job(job: dict) -> tuple[dict, dict]:
+    """Worker entrypoint for parallel sweep execution."""
+    row = run_single_point(
+        distance=int(job["distance"]),
+        rounds=int(job["rounds"]),
+        shots=int(job["shots"]),
+        erasure_prob=float(job["e_erasure"]),
+        check_prob=float(job["q_check"]),
+        pauli_prob=float(job["p_pauli"]),
+        seed=int(job["seed"]),
+        sample_threads=int(job["sample_threads"]),
+        decode_threads=1,
+        max_batch_bytes=int(job["max_batch_bytes"]),
+        single_qubit_errors=bool(job["single_qubit_errors"]),
+    )
+    row["case"] = str(job["case_label"])
+    return job, row
+
+
 def crossings_linear(
     curve_small: list[tuple[float, float]],
     curve_large: list[tuple[float, float]],
@@ -410,7 +426,28 @@ def main() -> None:
         help="Comma-separated post-clifford Pauli probabilities p.",
     )
     parser.add_argument("--num-threads", type=int, default=1)
-    parser.add_argument("--decode-threads", type=int, default=None)
+    parser.add_argument(
+        "--sweep-threads",
+        type=int,
+        default=1,
+        help=(
+            "Number of outer sweep workers (parallel sweep points). "
+            "Decoder always uses 1 thread."
+        ),
+    )
+    parser.add_argument(
+        "--sweep-backend",
+        type=str,
+        default="process",
+        choices=["process", "thread"],
+        help="Parallel backend for outer sweep workers.",
+    )
+    parser.add_argument(
+        "--decode-threads",
+        type=int,
+        default=None,
+        help="Deprecated: decoder is forced to 1 thread in this script.",
+    )
     parser.add_argument("--max-batch-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument(
         "--json-out",
@@ -441,7 +478,12 @@ def main() -> None:
     if any(p < 0.0 or p > 1.0 for p in p_values):
         raise ValueError("All p-values must be in [0, 1].")
 
-    decode_threads = args.decode_threads if args.decode_threads is not None else args.num_threads
+    if args.sweep_threads <= 0:
+        raise ValueError("--sweep-threads must be positive.")
+    if args.decode_threads is not None and int(args.decode_threads) != 1:
+        print(
+            f"warning: forcing decoder threads to 1 (received --decode-threads={args.decode_threads})."
+        )
 
     # two_qubit_only=False means single_qubit_errors=True in builder.
     cases = [
@@ -463,8 +505,8 @@ def main() -> None:
             pair_rows: list[dict] = []
             pair_thresholds: list[dict] = []
 
+            jobs = []
             for case_i, case in enumerate(cases):
-                case_rows: list[dict] = []
                 for cfg_i, (distance, rounds) in enumerate(configs):
                     for e_i, e_erasure in enumerate(e_values):
                         seed = (
@@ -475,32 +517,64 @@ def main() -> None:
                             + cfg_i * 100_000
                             + e_i
                         )
-                        row = run_single_point(
-                            distance=distance,
-                            rounds=rounds,
-                            shots=args.shots,
-                            erasure_prob=float(e_erasure),
-                            check_prob=float(q_check),
-                            pauli_prob=float(p_pauli),
-                            seed=seed,
-                            sample_threads=args.num_threads,
-                            decode_threads=decode_threads,
-                            max_batch_bytes=args.max_batch_bytes,
-                            single_qubit_errors=bool(case["single_qubit_errors"]),
-                        )
-                        row["case"] = case["label"]
-                        case_rows.append(row)
-                        pair_rows.append(row)
-
-                        job_idx += 1
-                        print(
-                            f"[{job_idx}/{total_jobs}] "
-                            f"case={case['label']} p={p_pauli:.6g} q={q_check:.6g} "
-                            f"(d={distance},r={rounds}) e={e_erasure:.6g} "
-                            f"LER/round={row['logical_error_rate_per_round']:.6g} "
-                            f"decode_failures={row['decode_failures']}"
+                        jobs.append(
+                            {
+                                "case_label": case["label"],
+                                "single_qubit_errors": bool(case["single_qubit_errors"]),
+                                "distance": int(distance),
+                                "rounds": int(rounds),
+                                "e_erasure": float(e_erasure),
+                                "q_check": float(q_check),
+                                "p_pauli": float(p_pauli),
+                                "shots": int(args.shots),
+                                "seed": int(seed),
+                                "sample_threads": int(args.num_threads),
+                                "max_batch_bytes": int(args.max_batch_bytes),
+                            }
                         )
 
+            case_rows_map: dict[str, list[dict]] = {case["label"]: [] for case in cases}
+            max_workers = min(int(args.sweep_threads), max(1, len(jobs)))
+            executor_cls = ProcessPoolExecutor if args.sweep_backend == "process" else ThreadPoolExecutor
+
+            def record_result(job: dict, row: dict) -> None:
+                nonlocal job_idx
+                pair_rows.append(row)
+                case_rows_map[job["case_label"]].append(row)
+                job_idx += 1
+                print(
+                    f"[{job_idx}/{total_jobs}] "
+                    f"case={job['case_label']} p={p_pauli:.6g} q={q_check:.6g} "
+                    f"(d={job['distance']},r={job['rounds']}) e={job['e_erasure']:.6g} "
+                    f"LER/round={row['logical_error_rate_per_round']:.6g} "
+                    f"decode_failures={row['decode_failures']}"
+                )
+
+            if max_workers <= 1:
+                for job in jobs:
+                    completed_job, row = run_single_point_job(job)
+                    record_result(completed_job, row)
+            else:
+                try:
+                    with executor_cls(max_workers=max_workers) as pool:
+                        future_to_job = {
+                            pool.submit(run_single_point_job, job): job
+                            for job in jobs
+                        }
+                        for future in as_completed(future_to_job):
+                            completed_job, row = future.result()
+                            record_result(completed_job, row)
+                except (PermissionError, OSError) as exc:
+                    print(
+                        f"warning: failed to start parallel sweep backend '{args.sweep_backend}'"
+                        f" ({type(exc).__name__}: {exc}); falling back to sequential."
+                    )
+                    for job in jobs:
+                        completed_job, row = run_single_point_job(job)
+                        record_result(completed_job, row)
+
+            for case in cases:
+                case_rows = case_rows_map[case["label"]]
                 est = estimate_threshold_for_slice(case_rows)
                 threshold_row = {
                     "case": case["label"],
@@ -564,6 +638,11 @@ def main() -> None:
         "two_qubit_only": "Two-qubit erasure only",
         "single_qubit_enabled": "Single-qubit erasure enabled",
     }
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
     plt.figure(figsize=(9.4, 5.8))
     has_curve = False
