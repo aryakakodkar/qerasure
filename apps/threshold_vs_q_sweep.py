@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import json
+import multiprocessing as mp
 import random
 import sys
 import time
@@ -17,6 +18,18 @@ if str(PYTHON_SRC) not in sys.path:
     sys.path.insert(0, str(PYTHON_SRC))
 
 import qerasure as qe
+
+_PM_MODULE = None
+
+
+def get_pymatching():
+    """Import pymatching once per process."""
+    global _PM_MODULE
+    if _PM_MODULE is None:
+        import pymatching as pm
+
+        _PM_MODULE = pm
+    return _PM_MODULE
 
 
 def parse_configs(configs_text: str) -> list[tuple[int, int]]:
@@ -113,7 +126,7 @@ def decode_batch_allow_failures(
       - failed_mask: bool array [num_shots], true where decode failed
     """
     import numpy as np
-    import pymatching as pm
+    pm = get_pymatching()
 
     dets = np.asarray(detector_samples, dtype=np.uint8)
     checks = np.asarray(check_flags, dtype=np.uint8)
@@ -556,7 +569,16 @@ def main() -> None:
                     record_result(completed_job, row)
             else:
                 try:
-                    with executor_cls(max_workers=max_workers) as pool:
+                    executor_kwargs = {"max_workers": max_workers}
+                    # For process backend, prefer `fork` so workers inherit already-imported
+                    # pymatching/scipy state and avoid slow spawn-time imports.
+                    if executor_cls is ProcessPoolExecutor:
+                        _ = get_pymatching()
+                        try:
+                            executor_kwargs["mp_context"] = mp.get_context("fork")
+                        except ValueError:
+                            pass
+                    with executor_cls(**executor_kwargs) as pool:
                         future_to_job = {
                             pool.submit(run_single_point_job, job): job
                             for job in jobs

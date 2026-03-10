@@ -157,7 +157,7 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
 
   circuit::ErasureCircuit circuit;
   const auto append_post_clifford_pauli = [&](const std::vector<uint32_t>& targets) {
-    // Optional post-Clifford depolarization to model generic Pauli noise after H/CX.
+    // Optional post-Clifford depolarization.
     if (post_clifford_pauli_prob > 0.0 && !targets.empty()) {
       circuit.append(circuit::OpCode::DEPOLARIZE1, targets, post_clifford_pauli_prob);
     }
@@ -168,7 +168,6 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
     if (single_qubit_errors && !x_ancillas.empty()) {
       circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
     }
-    append_post_clifford_pauli(x_ancillas);
 
     for (std::size_t step = 0; step < 4; ++step) {
       const std::size_t step_start = step * gates_per_step;
@@ -223,12 +222,9 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
       } else {
         circuit.append(circuit::OpCode::ERASE2, erase_targets, erasure_prob);
       }
-      append_post_clifford_pauli(cx_targets);
       if (ecr_after_each_step) {
         circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
-        if (single_qubit_errors && !erasable_targets.empty()) {
-          circuit.append(circuit::OpCode::ERASE, erasable_targets, erasure_prob);
-        }
+        append_post_clifford_pauli(erasable_targets);
       }
     }
 
@@ -236,12 +232,9 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
     if (single_qubit_errors && !x_ancillas.empty()) {
       circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
     }
-    append_post_clifford_pauli(x_ancillas);
     if (!ecr_after_each_step) {
       circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
-      if (single_qubit_errors && !erasable_targets.empty()) {
-        circuit.append(circuit::OpCode::ERASE, erasable_targets, erasure_prob);
-      }
+      append_post_clifford_pauli(erasable_targets);
     }
     circuit.append(circuit::OpCode::MR, all_ancillas);
     append_round_detectors(&circuit, num_x_anc, num_z_anc, num_anc, round);
