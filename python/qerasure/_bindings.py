@@ -39,6 +39,13 @@ def _inject_extension_path() -> None:
 
 
 def load_cpp_module():
+    # Ensure Stim's Python bindings are loaded before importing qerasure's pybind
+    # module, so cross-module pybind type registration for stim::Circuit is present.
+    try:
+        import stim  # noqa: F401
+    except ModuleNotFoundError:
+        # Keep import behavior unchanged for users not using SurfDemBuilder paths.
+        pass
     # Prefer local build artifacts first so stale site-packages installs don't shadow
     # in-repo development builds.
     _inject_extension_path()

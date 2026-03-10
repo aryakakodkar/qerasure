@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import re
 from typing import Callable, Mapping, Optional, Sequence
 
@@ -446,11 +447,16 @@ class SurfDemBuilder:
         try:
             return self._cpp_builder.build_decoded_circuit(checks, bool(verbose))
         except TypeError as exc:
-            # Some environments fail to convert C++ stim::Circuit return values through pybind.
-            # Fall back to text conversion for compatibility.
             message = str(exc)
             if "stim::Circuit" not in message and "Unable to convert function return value" not in message:
                 raise
+            if os.environ.get("QERASURE_ALLOW_STIM_TEXT_FALLBACK", "0") not in {"1", "true", "TRUE"}:
+                raise RuntimeError(
+                    "Failed to convert native stim::Circuit return value from qerasure_python. "
+                    "Ensure `stim` is imported before `qerasure`, and that qerasure_python/stim "
+                    "are ABI-compatible. Set QERASURE_ALLOW_STIM_TEXT_FALLBACK=1 to enable "
+                    "slower text fallback."
+                ) from exc
             return stim.Circuit(str(self._cpp_builder.build_decoded_circuit_text(checks, bool(verbose))))
 
     def find_probability_violations(self, check_results: Sequence[int]):

@@ -17,6 +17,8 @@ PYTHON_SRC = REPO_ROOT / "python"
 if str(PYTHON_SRC) not in sys.path:
     sys.path.insert(0, str(PYTHON_SRC))
 
+# Load Stim bindings first so pybind cross-module cast of stim::Circuit works.
+import stim  # noqa: F401
 import qerasure as qe
 
 _PM_MODULE = None
