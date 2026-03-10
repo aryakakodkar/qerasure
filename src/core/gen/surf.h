@@ -17,7 +17,8 @@ class SurfaceCodeRotated {
                                         std::string erasable_qubits = "ALL",
                                         double reset_failure_prob = 0.0,
                                         bool ecr_after_each_step = false,
-                                        bool single_qubit_errors = false);
+                                        bool single_qubit_errors = false,
+                                        double post_clifford_pauli_prob = 0.0);
 
  private:
   RotatedSurfaceCode code_;

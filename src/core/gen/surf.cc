@@ -64,7 +64,8 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
                                                           std::string erasable_qubits,
                                                           double reset_failure_prob,
                                                           bool ecr_after_each_step,
-                                                          bool single_qubit_errors) {
+                                                          bool single_qubit_errors,
+                                                          double post_clifford_pauli_prob) {
   if (rounds == 0) {
     throw std::invalid_argument("rounds must be > 0");
   }
@@ -73,6 +74,9 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
   }
   if (reset_failure_prob < 0.0 || reset_failure_prob > 1.0) {
     throw std::invalid_argument("reset_failure_prob must be in [0, 1]");
+  }
+  if (post_clifford_pauli_prob < 0.0 || post_clifford_pauli_prob > 1.0) {
+    throw std::invalid_argument("post_clifford_pauli_prob must be in [0, 1]");
   }
 
   const ErasableMode mode = parse_erasable_mode(erasable_qubits);
@@ -152,12 +156,19 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
   }
 
   circuit::ErasureCircuit circuit;
+  const auto append_post_clifford_pauli = [&](const std::vector<uint32_t>& targets) {
+    // Optional post-Clifford depolarization to model generic Pauli noise after H/CX.
+    if (post_clifford_pauli_prob > 0.0 && !targets.empty()) {
+      circuit.append(circuit::OpCode::DEPOLARIZE1, targets, post_clifford_pauli_prob);
+    }
+  };
 
   for (std::size_t round = 0; round < rounds; ++round) {
     circuit.append(circuit::OpCode::H, x_ancillas);
     if (single_qubit_errors && !x_ancillas.empty()) {
       circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
     }
+    append_post_clifford_pauli(x_ancillas);
 
     for (std::size_t step = 0; step < 4; ++step) {
       const std::size_t step_start = step * gates_per_step;
@@ -212,6 +223,7 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
       } else {
         circuit.append(circuit::OpCode::ERASE2, erase_targets, erasure_prob);
       }
+      append_post_clifford_pauli(cx_targets);
       if (ecr_after_each_step) {
         circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
         if (single_qubit_errors && !erasable_targets.empty()) {
@@ -224,6 +236,7 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
     if (single_qubit_errors && !x_ancillas.empty()) {
       circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
     }
+    append_post_clifford_pauli(x_ancillas);
     if (!ecr_after_each_step) {
       circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
       if (single_qubit_errors && !erasable_targets.empty()) {
