@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import os
 import re
+import sys
 from typing import Callable, Mapping, Optional, Sequence
 
 from ._bindings import cpp
@@ -15,6 +15,7 @@ TQGSpreadModel = cpp.TQGSpreadModel
 SurfaceCodeRotated = cpp.SurfaceCodeRotated
 _CppErasureModel = cpp.ErasureModel
 _UINT32_MAX = (1 << 32) - 1
+_STIM_TEXT_FALLBACK_WARNED = False
 
 
 def _validate_probability(value: float, *, name: str) -> float:
@@ -447,16 +448,17 @@ class SurfDemBuilder:
         try:
             return self._cpp_builder.build_decoded_circuit(checks, bool(verbose))
         except TypeError as exc:
+            global _STIM_TEXT_FALLBACK_WARNED
             message = str(exc)
             if "stim::Circuit" not in message and "Unable to convert function return value" not in message:
                 raise
-            if os.environ.get("QERASURE_ALLOW_STIM_TEXT_FALLBACK", "0") not in {"1", "true", "TRUE"}:
-                raise RuntimeError(
-                    "Failed to convert native stim::Circuit return value from qerasure_python. "
-                    "Ensure `stim` is imported before `qerasure`, and that qerasure_python/stim "
-                    "are ABI-compatible. Set QERASURE_ALLOW_STIM_TEXT_FALLBACK=1 to enable "
-                    "slower text fallback."
-                ) from exc
+            if not _STIM_TEXT_FALLBACK_WARNED:
+                print(
+                    "WARNING: qerasure fell back to stringified decoded-circuit conversion "
+                    "because native stim::Circuit cast failed; this will lose performance.",
+                    file=sys.stderr,
+                )
+                _STIM_TEXT_FALLBACK_WARNED = True
             return stim.Circuit(str(self._cpp_builder.build_decoded_circuit_text(checks, bool(verbose))))
 
     def find_probability_violations(self, check_results: Sequence[int]):
