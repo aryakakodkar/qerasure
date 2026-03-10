@@ -620,9 +620,16 @@ std::string SurfDemBuilder::build_decoded_circuit_text(
 				out << circuit::opcode_name(instr.op);
 				if (circuit::is_probabilistic_op(instr.op)) {
 					out << "(" << instr.arg << ")";
+				} else if (instr.op == circuit::OpCode::OBSERVABLE_INCLUDE) {
+					// Stim requires an observable index argument; qerasure uses index 0.
+					out << "(0)";
 				}
 				for (const uint32_t target : instr.targets) {
-					out << " " << target;
+					if (circuit::uses_measurement_record_targets(instr.op)) {
+						out << " rec[-" << target << "]";
+					} else {
+						out << " " << target;
+					}
 				}
 			} else {
 				for (const uint32_t target : instr.targets) {
