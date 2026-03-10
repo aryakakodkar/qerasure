@@ -59,6 +59,7 @@ target_include_directories(qerasure
 set(QERASURE_BENCHMARK_SOURCES
     benchmarks/bench_stream_sampler.cpp
     benchmarks/bench_stream_decode.cpp
+    benchmarks/bench_surf_dem_profile.cpp
 )
 
 foreach(benchmark_source IN LISTS QERASURE_BENCHMARK_SOURCES)
@@ -77,6 +78,7 @@ include(CTest)
 if(BUILD_TESTING)
   set(QERASURE_TEST_SOURCES
       tests/hmm_decoder_stream_test.cpp
+      tests/skippable_reweight_test.cpp
       tests/surf_dem_builder_trace_test.cpp
       tests/surf_post_clifford_pauli_test.cpp
       tests/stream_decode_dem_test.cpp

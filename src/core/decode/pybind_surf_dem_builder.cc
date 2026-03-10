@@ -19,7 +19,7 @@ void bind_surf_dem_builder(py::module_& m) {
 			   const std::vector<uint8_t>& check_results,
 			   bool verbose) {
 				py::gil_scoped_release release;
-				return decoder.build_decoded_circuit(&check_results, verbose).str();
+				return decoder.build_decoded_circuit(&check_results, verbose);
 			},
 			py::arg("check_results"), py::arg("verbose") = false)
 		.def(
