@@ -443,7 +443,15 @@ class SurfDemBuilder:
             ) from exc
         # Keep stim imported so pybind can resolve and return native stim.Circuit.
         _ = stim
-        return self._cpp_builder.build_decoded_circuit(checks, bool(verbose))
+        try:
+            return self._cpp_builder.build_decoded_circuit(checks, bool(verbose))
+        except TypeError as exc:
+            # Some environments fail to convert C++ stim::Circuit return values through pybind.
+            # Fall back to text conversion for compatibility.
+            message = str(exc)
+            if "stim::Circuit" not in message and "Unable to convert function return value" not in message:
+                raise
+            return stim.Circuit(str(self._cpp_builder.build_decoded_circuit_text(checks, bool(verbose))))
 
     def find_probability_violations(self, check_results: Sequence[int]):
         """Return PAULI_CHANNEL_1 events whose disjoint probabilities sum above 1."""
