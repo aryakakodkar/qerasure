@@ -36,6 +36,11 @@ list(TRANSFORM STIM_SOURCE_FILES_REL PREPEND "${stim_SOURCE_DIR}/")
 add_library(qerasure_stim STATIC ${STIM_SOURCE_FILES_REL})
 target_include_directories(qerasure_stim PUBLIC "${stim_SOURCE_DIR}/src")
 target_compile_features(qerasure_stim PUBLIC cxx_std_20)
+# Ensure cross-module RTTI/typeinfo for Stim types is visible to pybind casters.
+set_target_properties(qerasure_stim PROPERTIES
+  CXX_VISIBILITY_PRESET default
+  VISIBILITY_INLINES_HIDDEN OFF
+)
 
 add_library(qerasure
     src/core/code/rotated_surface_code.cpp
@@ -50,6 +55,10 @@ add_library(qerasure
 )
 target_link_libraries(qerasure PRIVATE qerasure_stim)
 target_compile_features(qerasure PUBLIC cxx_std_20)
+set_target_properties(qerasure PROPERTIES
+  CXX_VISIBILITY_PRESET default
+  VISIBILITY_INLINES_HIDDEN OFF
+)
 
 target_include_directories(qerasure
     PUBLIC
@@ -129,4 +138,11 @@ if(QERASURE_BUILD_PYTHON)
 
   target_link_libraries(qerasure_python PRIVATE qerasure qerasure_stim)
   target_include_directories(qerasure_python PRIVATE ${CMAKE_SOURCE_DIR}/src)
+  # Important for returning Stim C++ types (stim::Circuit) into Python across
+  # extension-module boundaries on some toolchains.
+  set_target_properties(qerasure_python PROPERTIES
+    CXX_VISIBILITY_PRESET default
+    VISIBILITY_INLINES_HIDDEN OFF
+  )
+  target_compile_options(qerasure_python PRIVATE -fvisibility=default)
 endif()
