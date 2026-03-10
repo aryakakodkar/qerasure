@@ -441,7 +441,9 @@ class SurfDemBuilder:
             raise ModuleNotFoundError(
                 "The Python `stim` package is required for SurfDemBuilder.build_decoded_circuit."
             ) from exc
-        return stim.Circuit(self._cpp_builder.build_decoded_circuit(checks, bool(verbose)))
+        # Keep stim imported so pybind can resolve and return native stim.Circuit.
+        _ = stim
+        return self._cpp_builder.build_decoded_circuit(checks, bool(verbose))
 
     def find_probability_violations(self, check_results: Sequence[int]):
         """Return PAULI_CHANNEL_1 events whose disjoint probabilities sum above 1."""

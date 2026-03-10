@@ -81,6 +81,7 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
     qubit_operation_indices.resize(max_qubit_index_ + 1);
     qubit_check_operation_indices.resize(max_qubit_index_ + 1);
     qubit_reset_operation_indices.resize(max_qubit_index_ + 1);
+    qubit_skippable_operation_indices.resize(max_qubit_index_ + 1);
     qubit_last_check_operation_index.assign(max_qubit_index_ + 1, -1);
     std::vector<std::vector<uint32_t>> qubit_check_event_indices(max_qubit_index_ + 1);
     
@@ -97,12 +98,18 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
         const auto mark_qubit_reset = [&](uint32_t qubit) {
             append_unique_op_index(&qubit_reset_operation_indices, qubit, op_index);
         };
+        const auto mark_qubit_skippable = [&](uint32_t qubit) {
+            append_unique_op_index(&qubit_skippable_operation_indices, qubit, op_index);
+        };
 
         if (is_stim_op(instr.op)) {
             group.stim_instruction = instr;
             if (!uses_measurement_record_targets(instr.op)) {
                 for (const auto& target : instr.targets) {
                     mark_qubit_operation(target);
+                    if (is_erasure_skippable_op(instr.op)) {
+                        mark_qubit_skippable(target);
+                    }
                 }
             }
             if (is_entangling_op(instr.op)) {

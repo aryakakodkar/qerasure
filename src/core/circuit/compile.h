@@ -80,6 +80,8 @@ struct CompiledErasureProgram  {
     std::vector<std::vector<uint32_t>> qubit_operation_indices;
     std::vector<std::vector<uint32_t>> qubit_check_operation_indices;
     std::vector<std::vector<uint32_t>> qubit_reset_operation_indices;
+    // Per-qubit operation indices where erasure-skippable Stim ops touch the qubit.
+    std::vector<std::vector<uint32_t>> qubit_skippable_operation_indices;
     // For each qubit, operation index of its final erasure check (-1 if never checked).
     std::vector<int32_t> qubit_last_check_operation_index;
 

@@ -7,7 +7,6 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
-#include <unordered_map>
 
 namespace qerasure::decode {
 
@@ -66,6 +65,10 @@ struct LocalTargetChannelAccum {
 	double p_z;
 };
 
+uint64_t make_op_qubit_key(uint32_t op_index, uint32_t qubit) {
+	return (static_cast<uint64_t>(op_index) << 32) | qubit;
+}
+
 }  // namespace
 
 SurfDemBuilder::SurfDemBuilder(const circuit::CompiledErasureProgram& program) : program_(program) {
@@ -89,6 +92,12 @@ SurfDemBuilder::SurfDemBuilder(const circuit::CompiledErasureProgram& program) :
 		check_event_to_op_index_.push_back(op_index);
 	}
 	}
+	qubit_check_events_.assign(program_.max_qubit_index() + 1, {});
+	for (uint32_t check_event_index = 0; check_event_index < check_event_to_qubit_.size();
+		 ++check_event_index) {
+		const uint32_t qubit = check_event_to_qubit_[check_event_index];
+		qubit_check_events_[qubit].push_back(check_event_index);
+	}
 
 	if (check_event_to_qubit_.size() != program_.num_checks()) {
 		throw std::logic_error("SurfDemBuilder check-event map size mismatch with CompiledErasureProgram");
@@ -96,12 +105,26 @@ SurfDemBuilder::SurfDemBuilder(const circuit::CompiledErasureProgram& program) :
 	if (program_.check_lookback_links.size() != program_.num_checks()) {
 		throw std::logic_error("SurfDemBuilder expected check_lookback_links to match num_checks");
 	}
+	for (uint32_t qubit = 0; qubit < qubit_check_events_.size(); ++qubit) {
+		if (qubit_check_events_[qubit].size() !=
+			program_.qubit_check_operation_indices.at(qubit).size()) {
+			throw std::logic_error(
+				"SurfDemBuilder per-qubit check-event mapping size mismatch with compiled check op indices");
+		}
+	}
 }
 
 SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 	const std::vector<uint8_t>* check_results,
-	bool verbose) const {
+	bool verbose,
+	SkippableReweightMap* skippable_reweights) const {
 	SpreadInjectionBuckets buckets(program_.operation_groups.size());
+	// Reuse per-source merge buffers across flagged checks to avoid repeated
+	// full-size allocations and whole-range scans.
+	std::vector<std::vector<LocalTargetChannelAccum>> source_emit_channels(
+		program_.operation_groups.size());
+	std::vector<uint32_t> touched_emit_ops;
+	touched_emit_ops.reserve(256);
 
 	if (check_results == nullptr) {
 		throw std::invalid_argument(
@@ -153,6 +176,12 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 		if (start_offset > end_offset) {
 			throw std::logic_error("decoded lookback operation window is inverted");
 		}
+		const std::vector<uint32_t>& qubit_skippable_ops =
+			program_.qubit_skippable_operation_indices.at(qubit);
+		for (uint32_t emit_op_index : touched_emit_ops) {
+			source_emit_channels[emit_op_index].clear();
+		}
+		touched_emit_ops.clear();
 
 		double p_unerased = 1.0;
 		// Likelihood of the observed check pattern in this window under a no-erasure path.
@@ -255,10 +284,14 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 
 		double p_erased_by_op = 0.0;
 		size_t branch_index = 0;
-		std::vector<std::vector<LocalTargetChannelAccum>> source_emit_channels(
-			program_.operation_groups.size());
+		size_t skippable_index = 0;
+		const uint32_t start_op_index = program_.qubit_operation_indices.at(qubit)[start_offset];
+		while (skippable_index < qubit_skippable_ops.size() &&
+			   qubit_skippable_ops[skippable_index] < start_op_index) {
+			++skippable_index;
+		}
 		const auto merge_into_emit_bucket =
-			[&source_emit_channels](uint32_t emit_op_index, uint32_t target_qubit, double p_x,
+			[&source_emit_channels, &touched_emit_ops](uint32_t emit_op_index, uint32_t target_qubit, double p_x,
 									double p_y, double p_z) {
 				if (p_x <= 0.0 && p_y <= 0.0 && p_z <= 0.0) {
 					return;
@@ -271,6 +304,9 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 						entry.p_z += p_z;
 						return;
 					}
+				}
+				if (bucket.empty()) {
+					touched_emit_ops.push_back(emit_op_index);
 				}
 				bucket.push_back({target_qubit, p_x, p_y, p_z});
 			};
@@ -309,6 +345,21 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 					accumulate_channel(branch.onset_pair_target, onset_px, onset_py, onset_pz);
 				}
 				branch_index++;
+			}
+			while (skippable_index < qubit_skippable_ops.size() &&
+				   qubit_skippable_ops[skippable_index] < op_index) {
+				++skippable_index;
+			}
+			if (skippable_reweights != nullptr &&
+				skippable_index < qubit_skippable_ops.size() &&
+				qubit_skippable_ops[skippable_index] == op_index) {
+				const double p_unerased_by_op = std::clamp(1.0 - p_erased_by_op, 0.0, 1.0);
+				const uint64_t key = make_op_qubit_key(op_index, qubit);
+				const auto existing_it = skippable_reweights->find(key);
+				if (existing_it == skippable_reweights->end() ||
+					p_unerased_by_op < existing_it->second) {
+					(*skippable_reweights)[key] = p_unerased_by_op;
+				}
 			}
 
 			if (p_onset_at_op > 0.0) {
@@ -349,15 +400,14 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 			if (op_group.stim_instruction.has_value() &&
 				circuit::is_measurement_op(op_group.stim_instruction->op) &&
 				p_erased_by_op > 0.0) {
-				const auto& targets = op_group.stim_instruction->targets;
-				if (std::find(targets.begin(), targets.end(), qubit) != targets.end()) {
-					const double p_meas_x = 0.5 * p_erased_by_op;
-					if (p_meas_x > 0.0) {
-						const uint32_t pre_emit_op_index =
-							(op_index == 0) ? op_to_emit_op_index_[op_index]
-											: op_to_emit_op_index_[op_index - 1];
-						merge_into_emit_bucket(pre_emit_op_index, qubit, p_meas_x, 0.0, 0.0);
-					}
+				// op_index comes from qubit_operation_indices for this qubit, so measurement
+				// targets necessarily include `qubit`.
+				const double p_meas_x = 0.5 * p_erased_by_op;
+				if (p_meas_x > 0.0) {
+					const uint32_t pre_emit_op_index =
+						(op_index == 0) ? op_to_emit_op_index_[op_index]
+										: op_to_emit_op_index_[op_index - 1];
+					merge_into_emit_bucket(pre_emit_op_index, qubit, p_meas_x, 0.0, 0.0);
 				}
 			}
 
@@ -368,7 +418,7 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 			}
 		}
 
-		for (uint32_t emit_op_index = 0; emit_op_index < source_emit_channels.size(); ++emit_op_index) {
+		for (uint32_t emit_op_index : touched_emit_ops) {
 			for (const auto& entry : source_emit_channels[emit_op_index]) {
 				buckets[emit_op_index].push_back(
 					{emit_op_index, entry.target_qubit, entry.p_x, entry.p_y, entry.p_z});
@@ -384,18 +434,6 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 	//
 	// This captures cases where a qubit remains erased despite an unflagged final check.
 	const uint32_t num_qubits = program_.max_qubit_index() + 1;
-	std::vector<std::vector<uint32_t>> qubit_check_events(num_qubits);
-	qubit_check_events.assign(num_qubits, {});
-	std::unordered_map<uint64_t, uint32_t> check_event_by_qubit_op;
-	check_event_by_qubit_op.reserve(check_results->size() * 2 + 1);
-	for (uint32_t check_event_index = 0; check_event_index < check_results->size(); ++check_event_index) {
-		const uint32_t qubit = check_event_to_qubit_[check_event_index];
-		const uint32_t op_index = check_event_to_op_index_[check_event_index];
-		qubit_check_events[qubit].push_back(check_event_index);
-		const uint64_t key = (static_cast<uint64_t>(op_index) << 32) | qubit;
-		check_event_by_qubit_op[key] = check_event_index;
-	}
-
 	for (uint32_t qubit = 0; qubit < num_qubits; ++qubit) {
 		const std::vector<uint32_t>& qubit_ops = program_.qubit_operation_indices.at(qubit);
 		if (qubit_ops.empty()) {
@@ -425,7 +463,8 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 		}
 
 		uint32_t start_op = 0;
-		const std::vector<uint32_t>& local_check_events = qubit_check_events[qubit];
+		const std::vector<uint32_t>& local_check_events = qubit_check_events_[qubit];
+		const std::vector<uint32_t>& local_check_ops = program_.qubit_check_operation_indices.at(qubit);
 		if (!local_check_events.empty()) {
 			const uint32_t last_local = static_cast<uint32_t>(local_check_events.size() - 1);
 			uint32_t lookback_local = 0;
@@ -454,6 +493,9 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 		auto start_it = std::lower_bound(qubit_ops.begin(), qubit_ops.end(), start_op);
 		auto end_it = std::upper_bound(
 			start_it, qubit_ops.end(), static_cast<uint32_t>(final_meas_op));
+		size_t local_check_cursor = static_cast<size_t>(
+			std::lower_bound(local_check_ops.begin(), local_check_ops.end(), start_op) -
+			local_check_ops.begin());
 		for (auto it = start_it; it != end_it; ++it) {
 			const uint32_t op_index = *it;
 			const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
@@ -472,12 +514,16 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 				if (check.qubit_index != qubit) {
 					continue;
 				}
-				const uint64_t key = (static_cast<uint64_t>(op_index) << 32) | qubit;
-				const auto idx_it = check_event_by_qubit_op.find(key);
-				if (idx_it == check_event_by_qubit_op.end()) {
+				while (local_check_cursor < local_check_ops.size() &&
+					   local_check_ops[local_check_cursor] < op_index) {
+					++local_check_cursor;
+				}
+				if (local_check_cursor >= local_check_ops.size() ||
+					local_check_ops[local_check_cursor] != op_index) {
 					throw std::logic_error("missing check event index for qubit/op in DEM builder");
 				}
-				const uint8_t observed = (*check_results)[idx_it->second];
+				const uint8_t observed = (*check_results)[local_check_events[local_check_cursor]];
+				++local_check_cursor;
 				if (observed == 1) {
 					p_no_erasure *= check.false_positive_probability;
 				} else if (observed == 0) {
@@ -507,15 +553,34 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 stim::Circuit SurfDemBuilder::build_decoded_circuit(
 	const std::vector<uint8_t>* check_results,
 	bool verbose) const {
+	SkippableReweightMap skippable_reweights;
 	SpreadInjectionBuckets buckets =
-		compute_spread_injections(check_results, verbose);
+		compute_spread_injections(check_results, verbose, &skippable_reweights);
 
 	stim::Circuit injected;
 	for (uint32_t op_index = 0; op_index < program_.operation_groups.size(); ++op_index) {
 		const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
 		if (op_group.stim_instruction.has_value()) {
-			simulator::internal::append_mapped_stim_instruction(
-				op_group.stim_instruction.value(), &injected);
+			const circuit::Instruction& instr = op_group.stim_instruction.value();
+			const bool should_reweight =
+				circuit::is_erasure_skippable_op(instr.op) && circuit::is_probabilistic_op(instr.op);
+			if (!should_reweight) {
+				simulator::internal::append_mapped_stim_instruction(instr, &injected);
+			} else {
+				const char* op_name = circuit::opcode_name(instr.op);
+				for (const uint32_t target : instr.targets) {
+					double p_unerased = 1.0;
+					const auto it = skippable_reweights.find(make_op_qubit_key(op_index, target));
+					if (it != skippable_reweights.end()) {
+						p_unerased = it->second;
+					}
+					const double reweighted_prob = std::clamp(instr.arg * p_unerased, 0.0, 1.0);
+					if (reweighted_prob <= 0.0) {
+						continue;
+					}
+					injected.safe_append_ua(op_name, {target}, reweighted_prob);
+				}
+			}
 		}
 
 		for (const SpreadInjectionEvent& event : buckets[op_index]) {
@@ -535,8 +600,9 @@ stim::Circuit SurfDemBuilder::build_decoded_circuit(
 std::string SurfDemBuilder::build_decoded_circuit_text(
 	const std::vector<uint8_t>* check_results,
 	bool verbose) const {
+	SkippableReweightMap skippable_reweights;
 	SpreadInjectionBuckets buckets =
-		compute_spread_injections(check_results, verbose);
+		compute_spread_injections(check_results, verbose, &skippable_reweights);
 
 	std::ostringstream out;
 	bool first_line = true;
@@ -544,16 +610,37 @@ std::string SurfDemBuilder::build_decoded_circuit_text(
 		const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
 		if (op_group.stim_instruction.has_value()) {
 			const auto& instr = op_group.stim_instruction.value();
-			if (!first_line) {
-				out << "\n";
-			}
-			first_line = false;
-			out << circuit::opcode_name(instr.op);
-			if (circuit::is_probabilistic_op(instr.op)) {
-				out << "(" << instr.arg << ")";
-			}
-			for (const uint32_t target : instr.targets) {
-				out << " " << target;
+			const bool should_reweight =
+				circuit::is_erasure_skippable_op(instr.op) && circuit::is_probabilistic_op(instr.op);
+			if (!should_reweight) {
+				if (!first_line) {
+					out << "\n";
+				}
+				first_line = false;
+				out << circuit::opcode_name(instr.op);
+				if (circuit::is_probabilistic_op(instr.op)) {
+					out << "(" << instr.arg << ")";
+				}
+				for (const uint32_t target : instr.targets) {
+					out << " " << target;
+				}
+			} else {
+				for (const uint32_t target : instr.targets) {
+					double p_unerased = 1.0;
+					const auto it = skippable_reweights.find(make_op_qubit_key(op_index, target));
+					if (it != skippable_reweights.end()) {
+						p_unerased = it->second;
+					}
+					const double reweighted_prob = std::clamp(instr.arg * p_unerased, 0.0, 1.0);
+					if (reweighted_prob <= 0.0) {
+						continue;
+					}
+					if (!first_line) {
+						out << "\n";
+					}
+					first_line = false;
+					out << circuit::opcode_name(instr.op) << "(" << reweighted_prob << ") " << target;
+				}
 			}
 		}
 

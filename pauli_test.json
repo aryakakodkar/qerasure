@@ -1,0 +1,452 @@
+{
+  "configs": [
+    {
+      "distance": 3,
+      "qec_rounds": 3
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7
+    }
+  ],
+  "shots_per_point": 10000,
+  "p_values": [
+    0.001,
+    0.001291549665014884,
+    0.0016681005372000592,
+    0.0021544346900318843,
+    0.0027825594022071257,
+    0.003593813663804626,
+    0.004641588833612777,
+    0.005994842503189409,
+    0.007742636826811269,
+    0.01
+  ],
+  "elapsed_seconds": 401.0623935828917,
+  "rows": [
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241654,
+      "p_two_qubit_erasure": 0.001,
+      "logical_error_rate": 0.025,
+      "logical_error_rate_per_round": 0.008403758659612626,
+      "timing_seconds": {
+        "sample": 0.09110645903274417,
+        "decode": 0.33957141591235995,
+        "total": 0.4306778749451041
+      }
+    },
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241655,
+      "p_two_qubit_erasure": 0.001291549665014884,
+      "logical_error_rate": 0.027,
+      "logical_error_rate_per_round": 0.009082237312322938,
+      "timing_seconds": {
+        "sample": 0.08732941607013345,
+        "decode": 0.18888375023379922,
+        "total": 0.27621316630393267
+      }
+    },
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241656,
+      "p_two_qubit_erasure": 0.0016681005372000592,
+      "logical_error_rate": 0.0305,
+      "logical_error_rate_per_round": 0.010271815602003187,
+      "timing_seconds": {
+        "sample": 0.09004499996080995,
+        "decode": 0.19554991694167256,
+        "total": 0.2855949169024825
+      }
+    },
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241657,
+      "p_two_qubit_erasure": 0.0021544346900318843,
+      "logical_error_rate": 0.0309,
+      "logical_error_rate_per_round": 0.01040794959971747,
+      "timing_seconds": {
+        "sample": 0.09146508295089006,
+        "decode": 0.20582441706210375,
+        "total": 0.2972895000129938
+      }
+    },
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241658,
+      "p_two_qubit_erasure": 0.0027825594022071257,
+      "logical_error_rate": 0.0382,
+      "logical_error_rate_per_round": 0.012899002193965337,
+      "timing_seconds": {
+        "sample": 0.09169345768168569,
+        "decode": 0.24117312533780932,
+        "total": 0.332866583019495
+      }
+    },
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241659,
+      "p_two_qubit_erasure": 0.003593813663804626,
+      "logical_error_rate": 0.0422,
+      "logical_error_rate_per_round": 0.014269311442076216,
+      "timing_seconds": {
+        "sample": 0.08859579125419259,
+        "decode": 0.26638612477108836,
+        "total": 0.35498191602528095
+      }
+    },
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241660,
+      "p_two_qubit_erasure": 0.004641588833612777,
+      "logical_error_rate": 0.0504,
+      "logical_error_rate_per_round": 0.01709041846652759,
+      "timing_seconds": {
+        "sample": 0.08889625035226345,
+        "decode": 0.3191650416702032,
+        "total": 0.40806129202246666
+      }
+    },
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241661,
+      "p_two_qubit_erasure": 0.005994842503189409,
+      "logical_error_rate": 0.0632,
+      "logical_error_rate_per_round": 0.021526742124568732,
+      "timing_seconds": {
+        "sample": 0.09045124985277653,
+        "decode": 0.401143042370677,
+        "total": 0.4915942922234535
+      }
+    },
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241662,
+      "p_two_qubit_erasure": 0.007742636826811269,
+      "logical_error_rate": 0.072,
+      "logical_error_rate_per_round": 0.024600207785337336,
+      "timing_seconds": {
+        "sample": 0.09640070796012878,
+        "decode": 0.5301918336190283,
+        "total": 0.6265925415791571
+      }
+    },
+    {
+      "distance": 3,
+      "qec_rounds": 3,
+      "shots": 10000,
+      "seed": 2884241663,
+      "p_two_qubit_erasure": 0.01,
+      "logical_error_rate": 0.0943,
+      "logical_error_rate_per_round": 0.03247664793392535,
+      "timing_seconds": {
+        "sample": 0.09714933298528194,
+        "decode": 0.6599297923967242,
+        "total": 0.7570791253820062
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241654,
+      "p_two_qubit_erasure": 0.001,
+      "logical_error_rate": 0.0339,
+      "logical_error_rate_per_round": 0.006873852344660869,
+      "timing_seconds": {
+        "sample": 0.2686219587922096,
+        "decode": 7.5060436660423875,
+        "total": 7.774665624834597
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241655,
+      "p_two_qubit_erasure": 0.001291549665014884,
+      "logical_error_rate": 0.035,
+      "logical_error_rate_per_round": 0.00710010980087461,
+      "timing_seconds": {
+        "sample": 0.24025574978441,
+        "decode": 7.831944000441581,
+        "total": 8.072199750225991
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241656,
+      "p_two_qubit_erasure": 0.0016681005372000592,
+      "logical_error_rate": 0.0414,
+      "logical_error_rate_per_round": 0.00842062469883198,
+      "timing_seconds": {
+        "sample": 0.2515729167498648,
+        "decode": 8.246619625017047,
+        "total": 8.498192541766912
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241657,
+      "p_two_qubit_erasure": 0.0021544346900318843,
+      "logical_error_rate": 0.0491,
+      "logical_error_rate_per_round": 0.01001874946595882,
+      "timing_seconds": {
+        "sample": 0.2532810000702739,
+        "decode": 8.657785708084702,
+        "total": 8.911066708154976
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241658,
+      "p_two_qubit_erasure": 0.0027825594022071257,
+      "logical_error_rate": 0.0563,
+      "logical_error_rate_per_round": 0.011522493673950529,
+      "timing_seconds": {
+        "sample": 0.2551506250165403,
+        "decode": 9.020293292123824,
+        "total": 9.275443917140365
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241659,
+      "p_two_qubit_erasure": 0.003593813663804626,
+      "logical_error_rate": 0.0649,
+      "logical_error_rate_per_round": 0.013330709167503452,
+      "timing_seconds": {
+        "sample": 0.25605420768260956,
+        "decode": 9.345683500170708,
+        "total": 9.601737707853317
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241660,
+      "p_two_qubit_erasure": 0.004641588833612777,
+      "logical_error_rate": 0.082,
+      "logical_error_rate_per_round": 0.016966006129353284,
+      "timing_seconds": {
+        "sample": 0.28215133398771286,
+        "decode": 9.427399916108698,
+        "total": 9.70955125009641
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241661,
+      "p_two_qubit_erasure": 0.005994842503189409,
+      "logical_error_rate": 0.1059,
+      "logical_error_rate_per_round": 0.02213878957457527,
+      "timing_seconds": {
+        "sample": 0.2606712090782821,
+        "decode": 9.676282833330333,
+        "total": 9.936954042408615
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241662,
+      "p_two_qubit_erasure": 0.007742636826811269,
+      "logical_error_rate": 0.1355,
+      "logical_error_rate_per_round": 0.028700870476636164,
+      "timing_seconds": {
+        "sample": 0.2682428751140833,
+        "decode": 9.724416916258633,
+        "total": 9.992659791372716
+      }
+    },
+    {
+      "distance": 5,
+      "qec_rounds": 5,
+      "shots": 10000,
+      "seed": 2885241663,
+      "p_two_qubit_erasure": 0.01,
+      "logical_error_rate": 0.1825,
+      "logical_error_rate_per_round": 0.03949959511902423,
+      "timing_seconds": {
+        "sample": 0.2681739581748843,
+        "decode": 9.754446459002793,
+        "total": 10.022620417177677
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241654,
+      "p_two_qubit_erasure": 0.001,
+      "logical_error_rate": 0.0346,
+      "logical_error_rate_per_round": 0.005017762438021878,
+      "timing_seconds": {
+        "sample": 0.5611085002310574,
+        "decode": 29.474679375067353,
+        "total": 30.03578787529841
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241655,
+      "p_two_qubit_erasure": 0.001291549665014884,
+      "logical_error_rate": 0.0381,
+      "logical_error_rate_per_round": 0.005533886158712753,
+      "timing_seconds": {
+        "sample": 0.598857665900141,
+        "decode": 29.236367584206164,
+        "total": 29.835225250106305
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241656,
+      "p_two_qubit_erasure": 0.0016681005372000592,
+      "logical_error_rate": 0.0454,
+      "logical_error_rate_per_round": 0.006615573586852608,
+      "timing_seconds": {
+        "sample": 0.5753286252729595,
+        "decode": 29.65268020890653,
+        "total": 30.22800883417949
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241657,
+      "p_two_qubit_erasure": 0.0021544346900318843,
+      "logical_error_rate": 0.0525,
+      "logical_error_rate_per_round": 0.007674448738740347,
+      "timing_seconds": {
+        "sample": 0.5800349996425211,
+        "decode": 29.364469167310745,
+        "total": 29.944504166953266
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241658,
+      "p_two_qubit_erasure": 0.0027825594022071257,
+      "logical_error_rate": 0.0637,
+      "logical_error_rate_per_round": 0.009358695256949434,
+      "timing_seconds": {
+        "sample": 0.5797073752619326,
+        "decode": 29.397890917025506,
+        "total": 29.97759829228744
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241659,
+      "p_two_qubit_erasure": 0.003593813663804626,
+      "logical_error_rate": 0.0883,
+      "logical_error_rate_per_round": 0.013119506275134474,
+      "timing_seconds": {
+        "sample": 0.5869138329289854,
+        "decode": 29.75431920820847,
+        "total": 30.341233041137457
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241660,
+      "p_two_qubit_erasure": 0.004641588833612777,
+      "logical_error_rate": 0.1151,
+      "logical_error_rate_per_round": 0.017316969596152032,
+      "timing_seconds": {
+        "sample": 0.597441541031003,
+        "decode": 29.887756209354848,
+        "total": 30.48519775038585
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241661,
+      "p_two_qubit_erasure": 0.005994842503189409,
+      "logical_error_rate": 0.1513,
+      "logical_error_rate_per_round": 0.023163162601549492,
+      "timing_seconds": {
+        "sample": 0.6099347919225693,
+        "decode": 30.211513875052333,
+        "total": 30.821448666974902
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241662,
+      "p_two_qubit_erasure": 0.007742636826811269,
+      "logical_error_rate": 0.2,
+      "logical_error_rate_per_round": 0.031374914073002635,
+      "timing_seconds": {
+        "sample": 0.6153193330392241,
+        "decode": 30.62693937495351,
+        "total": 31.242258707992733
+      }
+    },
+    {
+      "distance": 7,
+      "qec_rounds": 7,
+      "shots": 10000,
+      "seed": 2886241663,
+      "p_two_qubit_erasure": 0.01,
+      "logical_error_rate": 0.269,
+      "logical_error_rate_per_round": 0.04377603182282497,
+      "timing_seconds": {
+        "sample": 0.6303082499653101,
+        "decode": 31.456390040926635,
+        "total": 32.086698290891945
+      }
+    }
+  ]
+}

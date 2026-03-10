@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "core/circuit/compile.h"
@@ -18,6 +19,7 @@ struct SpreadInjectionEvent {
 };
 
 using SpreadInjectionBuckets = std::vector<std::vector<SpreadInjectionEvent>>;
+using SkippableReweightMap = std::unordered_map<uint64_t, double>;
 
 class SurfDemBuilder {
 	public:
@@ -26,7 +28,8 @@ class SurfDemBuilder {
 	// Computes posterior-weighted spread injections for a single shot.
 	SpreadInjectionBuckets compute_spread_injections(
 		const std::vector<uint8_t>* check_results,
-		bool verbose = false) const;
+		bool verbose = false,
+		SkippableReweightMap* skippable_reweights = nullptr) const;
 
 	// Builds and returns a Stim circuit with spread injections added in time order.
 	stim::Circuit build_decoded_circuit(
@@ -46,6 +49,8 @@ class SurfDemBuilder {
 	// Global check-event order lookups.
 	std::vector<uint32_t> check_event_to_qubit_;
 	std::vector<uint32_t> check_event_to_op_index_;
+	// Per-qubit check events in the same local order as qubit_check_operation_indices.
+	std::vector<std::vector<uint32_t>> qubit_check_events_;
 	// Maps operation-group index to the visible Stim emission slot.
 	std::vector<uint32_t> op_to_emit_op_index_;
 };
