@@ -162,12 +162,19 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
       circuit.append(circuit::OpCode::DEPOLARIZE1, targets, post_clifford_pauli_prob);
     }
   };
+  const auto append_pre_measurement_x = [&](const std::vector<uint32_t>& targets) {
+    // Optional pre-measurement bit-flip channel.
+    if (post_clifford_pauli_prob > 0.0 && !targets.empty()) {
+      circuit.append(circuit::OpCode::X_ERROR, targets, post_clifford_pauli_prob);
+    }
+  };
 
   for (std::size_t round = 0; round < rounds; ++round) {
     circuit.append(circuit::OpCode::H, x_ancillas);
     if (single_qubit_errors && !x_ancillas.empty()) {
       circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
     }
+    append_post_clifford_pauli(x_ancillas);
 
     for (std::size_t step = 0; step < 4; ++step) {
       const std::size_t step_start = step * gates_per_step;
@@ -222,6 +229,7 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
       } else {
         circuit.append(circuit::OpCode::ERASE2, erase_targets, erasure_prob);
       }
+      append_post_clifford_pauli(cx_targets);
       if (ecr_after_each_step) {
         circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
         append_post_clifford_pauli(erasable_targets);
@@ -232,14 +240,17 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
     if (single_qubit_errors && !x_ancillas.empty()) {
       circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
     }
+    append_post_clifford_pauli(x_ancillas);
     if (!ecr_after_each_step) {
       circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
       append_post_clifford_pauli(erasable_targets);
     }
+    append_pre_measurement_x(all_ancillas);
     circuit.append(circuit::OpCode::MR, all_ancillas);
     append_round_detectors(&circuit, num_x_anc, num_z_anc, num_anc, round);
   }
 
+  append_pre_measurement_x(data_qubits);
   circuit.append(circuit::OpCode::M, data_qubits);
 
   for (std::size_t zi = 0; zi < num_z_anc; ++zi) {

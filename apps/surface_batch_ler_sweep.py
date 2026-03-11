@@ -86,7 +86,7 @@ def run_single_point(
         erasable_qubits="ALL",
         reset_failure_prob=0.0,
         single_qubit_errors=single_qubit_errors,
-        post_clifford_pauli_prob = 0.00
+        post_clifford_pauli_prob = 0.005
     )
 
     model = qe.ErasureModel(
@@ -98,7 +98,7 @@ def run_single_point(
             qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
-    model.check_false_negative_prob = 0.01
+    model.check_false_negative_prob = 0.00
     model.check_false_positive_prob = 0.0
 
     compiled = qe.CompiledErasureProgram(circuit, model)
@@ -149,7 +149,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=random.randint(0, 2**32 - 1))
     parser.add_argument("--points", type=int, default=10)
     parser.add_argument("--p-min", type=float, default=1e-3)
-    parser.add_argument("--p-max", type=float, default=1e-2)
+    parser.add_argument("--p-max", type=float, default=3e-2)
     parser.add_argument("--p-values", type=str, default=None)
     parser.add_argument("--num-threads", type=int, default=1)
     parser.add_argument("--decode-threads", type=int, default=None)
