@@ -15,8 +15,10 @@ bool almost_equal(double a, double b, double tol = 1e-12) {
 
 void verify_no_depolarize(const qerasure::circuit::ErasureCircuit& circuit) {
 	for (const auto& instr : circuit.instructions()) {
-		if (instr.op == qerasure::circuit::OpCode::DEPOLARIZE1) {
-			throw std::runtime_error("Found DEPOLARIZE1 even though post_clifford_pauli_prob=0.");
+		if (instr.op == qerasure::circuit::OpCode::DEPOLARIZE1 ||
+			instr.op == qerasure::circuit::OpCode::X_ERROR) {
+			throw std::runtime_error(
+				"Found injected post-clifford/pre-measurement error even though post_clifford_pauli_prob=0.");
 		}
 	}
 }
@@ -29,7 +31,11 @@ void verify_post_clifford_layout(const qerasure::circuit::ErasureCircuit& circui
 	const std::vector<Instruction>& instructions = circuit.instructions();
 	uint64_t h_count = 0;
 	uint64_t cx_count = 0;
+	uint64_t ecr_count = 0;
+	uint64_t mr_count = 0;
+	uint64_t m_count = 0;
 	uint64_t depolarize_count = 0;
+	uint64_t x_error_count = 0;
 
 	for (size_t i = 0; i < instructions.size(); ++i) {
 		const Instruction& instr = instructions[i];
@@ -37,6 +43,12 @@ void verify_post_clifford_layout(const qerasure::circuit::ErasureCircuit& circui
 			++depolarize_count;
 			if (!almost_equal(instr.arg, expected_prob)) {
 				throw std::runtime_error("DEPOLARIZE1 argument does not match requested probability.");
+			}
+		}
+		if (instr.op == OpCode::X_ERROR) {
+			++x_error_count;
+			if (!almost_equal(instr.arg, expected_prob)) {
+				throw std::runtime_error("X_ERROR argument does not match requested probability.");
 			}
 		}
 		if (instr.op == OpCode::H) {
@@ -75,11 +87,42 @@ void verify_post_clifford_layout(const qerasure::circuit::ErasureCircuit& circui
 				throw std::runtime_error("DEPOLARIZE1 targets after CX do not match CX targets.");
 			}
 		}
+		if (instr.op == OpCode::ECR) {
+			++ecr_count;
+			if (i + 1 >= instructions.size() || instructions[i + 1].op != OpCode::DEPOLARIZE1) {
+				throw std::runtime_error("Expected DEPOLARIZE1 immediately after ECR.");
+			}
+			if (instructions[i + 1].targets != instr.targets) {
+				throw std::runtime_error("DEPOLARIZE1 targets after ECR do not match ECR targets.");
+			}
+		}
+		if (instr.op == OpCode::MR) {
+			++mr_count;
+			if (i == 0 || instructions[i - 1].op != OpCode::X_ERROR) {
+				throw std::runtime_error("Expected X_ERROR immediately before MR.");
+			}
+			if (instructions[i - 1].targets != instr.targets) {
+				throw std::runtime_error("Pre-MR X_ERROR targets do not match MR targets.");
+			}
+		}
+		if (instr.op == OpCode::M) {
+			++m_count;
+			if (i == 0 || instructions[i - 1].op != OpCode::X_ERROR) {
+				throw std::runtime_error("Expected X_ERROR immediately before final M.");
+			}
+			if (instructions[i - 1].targets != instr.targets) {
+				throw std::runtime_error("Pre-M X_ERROR targets do not match M targets.");
+			}
+		}
 	}
 
-	if (depolarize_count != h_count + cx_count) {
+	if (depolarize_count != h_count + cx_count + ecr_count) {
 		throw std::runtime_error(
-			"Number of DEPOLARIZE1 instructions does not equal number of H/CX instructions.");
+			"Number of DEPOLARIZE1 instructions does not equal H + CX + ECR count.");
+	}
+	if (x_error_count != mr_count + m_count) {
+		throw std::runtime_error(
+			"Number of X_ERROR instructions does not equal MR + M count.");
 	}
 }
 
@@ -128,6 +171,6 @@ int main() {
 		with_pauli_two_qubit_only, /*single_qubit_errors=*/false, kPostCliffordProb);
 
 	std::cout << "surf_post_clifford_pauli_test\n";
-	std::cout << "status: post-Clifford DEPOLARIZE1 placement verified\n";
+	std::cout << "status: post-Clifford DEPOLARIZE1 and pre-measurement X_ERROR placement verified\n";
 	return 0;
 }
