@@ -24,6 +24,16 @@ import qerasure as qe
 _PM_MODULE = None
 
 
+def _log(message: str) -> None:
+    """Emit progress logs immediately, even when stdout is block-buffered."""
+    print(message, flush=True)
+
+
+def _to_u32_seed(value: int) -> int:
+    """Normalize arbitrary Python ints into the uint32 seed range."""
+    return int(value) & 0xFFFFFFFF
+
+
 def get_pymatching():
     """Import pymatching once per process."""
     global _PM_MODULE
@@ -145,7 +155,7 @@ def decode_batch_allow_failures(
             preds = preds[:, None]
         return preds, failed_mask
     except Exception as exc:
-        print(
+        _log(
             "decode_batch failed, retrying per-check-pattern with failure-tolerant path:"
             f" {type(exc).__name__}: {exc}"
         )
@@ -480,6 +490,7 @@ def main() -> None:
         default=REPO_ROOT / "apps" / "results" / "threshold_vs_q_sweep.png",
     )
     args = parser.parse_args()
+    base_seed = _to_u32_seed(args.seed)
 
     configs = parse_configs(args.configs)
     e_values = resolve_e_values(args.e_values, args.e_interior_points)
@@ -496,7 +507,7 @@ def main() -> None:
     if args.sweep_threads <= 0:
         raise ValueError("--sweep-threads must be positive.")
     if args.decode_threads is not None and int(args.decode_threads) != 1:
-        print(
+        _log(
             f"warning: forcing decoder threads to 1 (received --decode-threads={args.decode_threads})."
         )
 
@@ -524,8 +535,8 @@ def main() -> None:
             for case_i, case in enumerate(cases):
                 for cfg_i, (distance, rounds) in enumerate(configs):
                     for e_i, e_erasure in enumerate(e_values):
-                        seed = (
-                            args.seed
+                        seed = _to_u32_seed(
+                            base_seed
                             + p_i * 1_000_000_000
                             + q_i * 100_000_000
                             + case_i * 10_000_000
@@ -557,7 +568,7 @@ def main() -> None:
                 pair_rows.append(row)
                 case_rows_map[job["case_label"]].append(row)
                 job_idx += 1
-                print(
+                _log(
                     f"[{job_idx}/{total_jobs}] "
                     f"case={job['case_label']} p={p_pauli:.6g} q={q_check:.6g} "
                     f"(d={job['distance']},r={job['rounds']}) e={job['e_erasure']:.6g} "
@@ -589,7 +600,7 @@ def main() -> None:
                             completed_job, row = future.result()
                             record_result(completed_job, row)
                 except (PermissionError, OSError) as exc:
-                    print(
+                    _log(
                         f"warning: failed to start parallel sweep backend '{args.sweep_backend}'"
                         f" ({type(exc).__name__}: {exc}); falling back to sequential."
                     )
@@ -607,7 +618,7 @@ def main() -> None:
                     **est,
                 }
                 pair_thresholds.append(threshold_row)
-                print(
+                _log(
                     f"threshold case={case['label']} p={p_pauli:.6g} q={q_check:.6g}: "
                     f"e_th={est['threshold_estimate']} "
                     f"(pairs={est['num_pairs_with_crossing']}, decode_failures={est['decode_failures']})"
@@ -653,7 +664,7 @@ def main() -> None:
             }
             args.json_out.write_text(json.dumps(summary_payload, indent=2))
 
-            print(
+            _log(
                 f"saved pair json: {pair_path} "
                 f"(p={p_pauli:.6g}, q={q_check:.6g}, elapsed={pair_elapsed:.2f}s)"
             )
@@ -703,10 +714,10 @@ def main() -> None:
     plt.close()
 
     elapsed = time.perf_counter() - t0
-    print(f"\nSaved summary JSON: {args.json_out}")
-    print(f"Saved pair JSON directory: {args.pair_json_dir}")
-    print(f"Saved Plot: {args.plot_out}")
-    print(f"Elapsed: {elapsed:.2f}s")
+    _log(f"\nSaved summary JSON: {args.json_out}")
+    _log(f"Saved pair JSON directory: {args.pair_json_dir}")
+    _log(f"Saved Plot: {args.plot_out}")
+    _log(f"Elapsed: {elapsed:.2f}s")
 
 
 if __name__ == "__main__":

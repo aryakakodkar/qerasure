@@ -18,6 +18,11 @@ _UINT32_MAX = (1 << 32) - 1
 _STIM_TEXT_FALLBACK_WARNED = False
 
 
+def _normalize_u32_seed(seed: int) -> int:
+    """Coerce Python ints into the uint32 range expected by C++ samplers."""
+    return int(seed) & _UINT32_MAX
+
+
 def _validate_probability(value: float, *, name: str) -> float:
     p = float(value)
     if p < 0.0 or p > 1.0:
@@ -400,7 +405,11 @@ class StreamSampler:
             raise ValueError("num_shots must be non-negative")
         if threads < 0:
             raise ValueError("num_threads must be non-negative")
-        return self._cpp_sampler.sample_syndromes(shots, int(seed), threads)
+        return self._cpp_sampler.sample_syndromes(
+            shots,
+            _normalize_u32_seed(seed),
+            threads,
+        )
 
     def sample_with_callback(
         self,
@@ -416,12 +425,22 @@ class StreamSampler:
         if shots < 0:
             raise ValueError("num_shots must be non-negative")
         if callback is None:
-            return self._cpp_sampler.sample_with_callback(shots, int(seed), None, threads)
+            return self._cpp_sampler.sample_with_callback(
+                shots,
+                _normalize_u32_seed(seed),
+                None,
+                threads,
+            )
 
         def wrapped(circuit_obj, check_flags):
             callback(circuit_obj, np.asarray(check_flags, dtype=np.uint8))
 
-        return self._cpp_sampler.sample_with_callback(shots, int(seed), wrapped, threads)
+        return self._cpp_sampler.sample_with_callback(
+            shots,
+            _normalize_u32_seed(seed),
+            wrapped,
+            threads,
+        )
 
 
 class SurfDemBuilder:
