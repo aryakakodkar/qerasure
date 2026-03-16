@@ -37,7 +37,7 @@ stim::Circuit build_sampled_logical_circuit(const circuit::CompiledErasureProgra
             if (circuit::is_measurement_op(op_group.stim_instruction->op)) {
                 // if a qubit is erased, its measurement outcome should be random
                 for (uint32_t target : op_group.stim_instruction->targets) {
-                    if ((*current_erasure_state)[target] == 1) {
+                    if ((*current_erasure_state)[target] >= 1) {
                         internal::append_mapped_stim_instruction(circuit::OpCode::X_ERROR,
                                                                  {target},
                                                                  0.5,
