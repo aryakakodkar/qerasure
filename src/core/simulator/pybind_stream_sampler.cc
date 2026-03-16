@@ -77,7 +77,14 @@ void bind_stream_sampler(py::module_& m) {
 					num_threads);
 			},
 			py::arg("num_shots"), py::arg("seed"), py::arg("callback") = py::none(),
-			py::arg("num_threads") = 1);
+			py::arg("num_threads") = 1)
+		.def(
+			"sample_exact_shot",
+			[](simulator::StreamSampler& sampler, uint32_t seed, uint32_t shot) {
+				auto sampled = sampler.sample_exact_shot(seed, shot);
+				return py::make_tuple(sampled.first.str(), sampled.second);
+			},
+			py::arg("seed"), py::arg("shot"));
 }
 
 }  // namespace qerasure::python_bindings
