@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <utility>
 #include <vector>
 
 #include "stim/circuit/circuit.h"
@@ -43,6 +44,12 @@ class StreamSampler {
             uint32_t num_shots,
             uint32_t seed,
             uint32_t num_threads = 1);
+
+        // Reconstruct exactly the logical circuit and check bits for one shot in the
+        // `sample_syndromes` stream, using the same per-shot RNG schedule.
+        std::pair<stim::Circuit, std::vector<uint8_t>> sample_exact_shot(
+            uint32_t seed,
+            uint32_t shot) const;
 
     private:
         const circuit::CompiledErasureProgram& program_;

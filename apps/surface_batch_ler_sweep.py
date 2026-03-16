@@ -79,6 +79,7 @@ def run_single_point(
     decode_threads: int,
     max_batch_bytes: int,
     single_qubit_errors: bool,
+    post_clifford_pauli_prob: float,
 ) -> dict:
     circuit = qe.SurfaceCodeRotated(distance).build_circuit(
         rounds=rounds,
@@ -86,11 +87,11 @@ def run_single_point(
         erasable_qubits="ALL",
         reset_failure_prob=0.0,
         single_qubit_errors=single_qubit_errors,
-        post_clifford_pauli_prob = 0.005
+        post_clifford_pauli_prob=post_clifford_pauli_prob,
     )
 
     model = qe.ErasureModel(
-        2,
+        3,
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.TQGSpreadModel(
@@ -98,8 +99,8 @@ def run_single_point(
             qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
-    model.check_false_negative_prob = 0.00
-    model.check_false_positive_prob = 0.0
+    model.check_false_negative_prob = 0.01
+    model.check_false_positive_prob = 0.01
 
     compiled = qe.CompiledErasureProgram(circuit, model)
     sampler = qe.StreamSampler(compiled)
@@ -127,6 +128,7 @@ def run_single_point(
         "shots": shots,
         "seed": seed,
         "p_two_qubit_erasure": p_tqe,
+        "post_clifford_pauli_prob": post_clifford_pauli_prob,
         "logical_error_rate": ler,
         "logical_error_rate_per_round": bernoulli_per_round(ler, rounds),
         "timing_seconds": {
@@ -161,6 +163,12 @@ def main() -> None:
         help="Include single-qubit erasure onsets after H and ECR operations.",
     )
     parser.add_argument(
+        "--post-clifford-pauli-prob",
+        type=float,
+        default=0.0,
+        help="Probability for injected post-clifford/pre-measurement Pauli channels.",
+    )
+    parser.add_argument(
         "--json-out",
         type=Path,
         default=REPO_ROOT / "apps" / "results" / "surface_batch_ler_sweep.json",
@@ -175,6 +183,8 @@ def main() -> None:
     configs = parse_configs(args.configs)
     p_values = make_p_values(args.p_values, args.p_min, args.p_max, args.points)
     decode_threads = args.decode_threads if args.decode_threads is not None else args.num_threads
+    if args.post_clifford_pauli_prob < 0.0 or args.post_clifford_pauli_prob > 1.0:
+        raise ValueError("--post-clifford-pauli-prob must be in [0, 1].")
 
     rows: list[dict] = []
     t0 = time.perf_counter()
@@ -191,6 +201,7 @@ def main() -> None:
                 decode_threads=decode_threads,
                 max_batch_bytes=args.max_batch_bytes,
                 single_qubit_errors=args.single_qubit_errors,
+                post_clifford_pauli_prob=float(args.post_clifford_pauli_prob),
             )
             rows.append(row)
             print(
@@ -206,6 +217,8 @@ def main() -> None:
         "configs": [{"distance": d, "qec_rounds": r} for d, r in configs],
         "shots_per_point": args.shots,
         "p_values": [float(p) for p in p_values],
+        "single_qubit_errors": bool(args.single_qubit_errors),
+        "post_clifford_pauli_prob": float(args.post_clifford_pauli_prob),
         "elapsed_seconds": elapsed,
         "rows": rows,
     }

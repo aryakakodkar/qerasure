@@ -85,6 +85,12 @@ endforeach()
 
 include(CTest)
 if(BUILD_TESTING)
+  find_package(Python3 COMPONENTS Interpreter Development.Module REQUIRED)
+  if(EXISTS "${CMAKE_SOURCE_DIR}/.venv/bin/python")
+    set(QERASURE_TEST_PYTHON_EXECUTABLE "${CMAKE_SOURCE_DIR}/.venv/bin/python")
+  else()
+    set(QERASURE_TEST_PYTHON_EXECUTABLE "${Python3_EXECUTABLE}")
+  endif()
   set(QERASURE_TEST_SOURCES
       tests/hmm_decoder_stream_test.cpp
       tests/skippable_reweight_test.cpp
@@ -108,6 +114,12 @@ if(BUILD_TESTING)
     target_link_libraries(${test_name} PRIVATE qerasure qerasure_stim)
     add_test(NAME ${test_name} COMMAND ${test_name})
   endforeach()
+
+  add_test(
+    NAME python_surface_batch_decode_failure_artifact_test
+    COMMAND ${QERASURE_TEST_PYTHON_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/python_surface_batch_decode_failure_artifact_test.py
+  )
 endif()
 
 if(QERASURE_BUILD_PYTHON)

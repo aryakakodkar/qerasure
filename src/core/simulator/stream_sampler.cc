@@ -386,4 +386,22 @@ SyndromeSampleBatch StreamSampler::sample_syndromes(
     return out;
 }
 
+std::pair<stim::Circuit, std::vector<uint8_t>> StreamSampler::sample_exact_shot(
+    uint32_t seed,
+    uint32_t shot) const {
+    const uint64_t max_persistence = static_cast<uint64_t>(program_.max_persistence());
+    std::vector<uint64_t> current_erasure_state(program_.max_qubit_index() + 1, 0);
+    std::vector<uint8_t> last_check_result(program_.max_qubit_index() + 1, 0);
+    std::vector<uint8_t> check_results(program_.num_checks(), 0);
+    FastRng shot_rng(seed, shot);
+    stim::Circuit circuit = build_sampled_logical_circuit(
+        program_,
+        max_persistence,
+        &shot_rng,
+        &current_erasure_state,
+        &last_check_result,
+        &check_results);
+    return {std::move(circuit), std::move(check_results)};
+}
+
 } // namespace qerasure::simulator

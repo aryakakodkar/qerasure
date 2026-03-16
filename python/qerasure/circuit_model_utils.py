@@ -7,6 +7,8 @@ import re
 import sys
 from typing import Callable, Mapping, Optional, Sequence
 
+import numpy as np
+
 from ._bindings import cpp
 
 OpCode = cpp.OpCode
@@ -441,6 +443,14 @@ class StreamSampler:
             wrapped,
             threads,
         )
+
+    def sample_exact_shot(self, seed: int, shot: int):
+        """Reconstruct one exact shot from the `sample_syndromes` stream."""
+        circuit_text, check_flags = self._cpp_sampler.sample_exact_shot(
+            _normalize_u32_seed(seed),
+            int(shot),
+        )
+        return circuit_text, np.asarray(check_flags, dtype=np.uint8)
 
 
 class SurfDemBuilder:
