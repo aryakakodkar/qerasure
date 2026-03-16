@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
+import multiprocessing as mp
 import sys
 from pathlib import Path
 
@@ -70,6 +70,52 @@ def _build_program(
     return qe.CompiledErasureProgram(circuit, model)
 
 
+def _run_case(job: dict) -> dict:
+    qe = _import_qerasure()
+    program = _build_program(
+        qe,
+        distance=int(job["distance"]),
+        rounds=int(job["rounds"]),
+        erasure_prob=float(job["erasure_prob"]),
+        check_error_prob=float(job["check_error_prob"]),
+        pauli_error_prob=float(job["pauli_error_prob"]),
+        max_persistence=int(job["max_persistence"]),
+        single_qubit_errors=bool(job["single_qubit_errors"]),
+    )
+    sampler = qe.StreamSampler(program)
+    dem_builder = qe.SurfDemBuilder(program)
+    decoder = qe.SurfaceCodeBatchDecoder(program, dem_builder=dem_builder)
+
+    dets, _obs, checks = sampler.sample(
+        num_shots=int(job["shots"]),
+        seed=int(job["seed"]),
+        num_threads=1,
+    )
+
+    decode_failed = False
+    error_text = ""
+    try:
+        decoder.decode_batch(dets, checks, num_threads=1)
+    except Exception as exc:  # pylint: disable=broad-except
+        decode_failed = True
+        error_text = f"{type(exc).__name__}: {exc}"
+
+    return {
+        "distance": int(job["distance"]),
+        "rounds": int(job["rounds"]),
+        "shots": int(job["shots"]),
+        "seed": int(job["seed"]),
+        "erasure_prob": float(job["erasure_prob"]),
+        "check_error_prob": float(job["check_error_prob"]),
+        "pauli_error_prob": float(job["pauli_error_prob"]),
+        "single_qubit_errors": bool(job["single_qubit_errors"]),
+        "max_persistence": int(job["max_persistence"]),
+        "decode_failed": decode_failed,
+        "error": error_text,
+        "_job_index": int(job["job_index"]),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -82,7 +128,12 @@ def main() -> int:
     parser.add_argument("--shots", type=int, default=100_000)
     parser.add_argument("--seed", type=int, default=920004)
     parser.add_argument("--erasure-prob", type=float, default=0.00172034)
-    parser.add_argument("--decode-threads", type=int, default=max(1, os.cpu_count() or 1))
+    parser.add_argument(
+        "--sweep-workers",
+        type=int,
+        default=max(1, mp.cpu_count() or 1),
+        help="Number of outer sweep worker processes. Sampling and decoding remain single-threaded per worker.",
+    )
     parser.add_argument(
         "--single-qubit-errors",
         action=argparse.BooleanOptionalAction,
@@ -93,59 +144,63 @@ def main() -> int:
     qe = _import_qerasure()
     if not QP_PAIRS:
         raise RuntimeError("QP_PAIRS is empty. Add one or more (q, p) pairs before running.")
-    results = []
+    if args.sweep_workers <= 0:
+        raise RuntimeError("--sweep-workers must be positive.")
+
+    jobs = []
+    job_index = 0
     for pair_index, (q_check_error, p_pauli_error) in enumerate(QP_PAIRS):
         for max_persistence in (2, 3, 4):
-            program = _build_program(
-                qe,
-                distance=int(args.distance),
-                rounds=int(args.rounds),
-                erasure_prob=float(args.erasure_prob),
-                check_error_prob=float(q_check_error),
-                pauli_error_prob=float(p_pauli_error),
-                max_persistence=max_persistence,
-                single_qubit_errors=bool(args.single_qubit_errors),
+            jobs.append(
+                {
+                    "job_index": job_index,
+                    "distance": int(args.distance),
+                    "rounds": int(args.rounds),
+                    "shots": int(args.shots),
+                    "seed": int(args.seed) + pair_index * 100 + max_persistence,
+                    "erasure_prob": float(args.erasure_prob),
+                    "check_error_prob": float(q_check_error),
+                    "pauli_error_prob": float(p_pauli_error),
+                    "single_qubit_errors": bool(args.single_qubit_errors),
+                    "max_persistence": int(max_persistence),
+                }
             )
-            sampler = qe.StreamSampler(program)
-            dem_builder = qe.SurfDemBuilder(program)
-            decoder = qe.SurfaceCodeBatchDecoder(program, dem_builder=dem_builder)
+            job_index += 1
 
-            dets, _obs, checks = sampler.sample(
-                num_shots=int(args.shots),
-                seed=int(args.seed) + pair_index * 100 + max_persistence,
-                num_threads=1,
-            )
-
-            decode_failed = False
-            error_text = ""
-            try:
-                decoder.decode_batch(dets, checks, num_threads=int(args.decode_threads))
-            except Exception as exc:  # pylint: disable=broad-except
-                decode_failed = True
-                error_text = f"{type(exc).__name__}: {exc}"
-
-            row = {
-                "distance": int(args.distance),
-                "rounds": int(args.rounds),
-                "shots": int(args.shots),
-                "seed": int(args.seed) + pair_index * 100 + max_persistence,
-                "erasure_prob": float(args.erasure_prob),
-                "check_error_prob": float(q_check_error),
-                "pauli_error_prob": float(p_pauli_error),
-                "single_qubit_errors": bool(args.single_qubit_errors),
-                "max_persistence": max_persistence,
-                "decode_failed": decode_failed,
-                "error": error_text,
-            }
-            results.append(row)
-            status = "FAIL" if decode_failed else "OK"
+    results_by_index: list[dict | None] = [None] * len(jobs)
+    if args.sweep_workers == 1:
+        for job in jobs:
+            row = _run_case(job)
+            results_by_index[int(row["_job_index"])] = row
+            status = "FAIL" if row["decode_failed"] else "OK"
             print(
-                f"q={q_check_error} p={p_pauli_error} mp={max_persistence} status={status} "
-                f"distance={args.distance} rounds={args.rounds} shots={args.shots} "
-                f"decode_threads={args.decode_threads}"
+                f"q={row['check_error_prob']} p={row['pauli_error_prob']} mp={row['max_persistence']} "
+                f"status={status} distance={args.distance} rounds={args.rounds} shots={args.shots} "
+                f"sweep_workers={args.sweep_workers}",
+                flush=True,
             )
-            if error_text:
-                print(f"  error={error_text}")
+            if row["error"]:
+                print(f"  error={row['error']}", flush=True)
+    else:
+        with mp.get_context("fork").Pool(processes=int(args.sweep_workers)) as pool:
+            for row in pool.imap_unordered(_run_case, jobs, chunksize=1):
+                results_by_index[int(row["_job_index"])] = row
+                status = "FAIL" if row["decode_failed"] else "OK"
+                print(
+                    f"q={row['check_error_prob']} p={row['pauli_error_prob']} mp={row['max_persistence']} "
+                    f"status={status} distance={args.distance} rounds={args.rounds} shots={args.shots} "
+                    f"sweep_workers={args.sweep_workers}",
+                    flush=True,
+                )
+                if row["error"]:
+                    print(f"  error={row['error']}", flush=True)
+
+    results = []
+    for row in results_by_index:
+        if row is None:
+            raise RuntimeError("Missing sweep result row after task execution.")
+        row.pop("_job_index", None)
+        results.append(row)
 
     print(json.dumps({"results": results}, indent=2))
     return 0

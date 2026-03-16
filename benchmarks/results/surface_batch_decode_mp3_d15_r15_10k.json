@@ -1,0 +1,38 @@
+{
+  "distance": 15,
+  "rounds": 15,
+  "shots": 1000,
+  "seed": 12345,
+  "erasable_qubits": "ALL",
+  "p_tqe": 0.01,
+  "p_fn": 0.01,
+  "p_fp": 0.0,
+  "max_persistence": 3,
+  "reset_failure_prob": 0.0,
+  "num_threads": 1,
+  "decode_threads": 1,
+  "max_batch_bytes": 268435456,
+  "sample_time_s": 0.37727612536400557,
+  "decode_time_s": 12.04915845906362,
+  "total_time_s": 12.426434875000268,
+  "sample_throughput_shots_per_s": 2650.578535907022,
+  "decode_throughput_shots_per_s": 82.99334790868983,
+  "logical_error_rate": 0.0,
+  "detector_shape": [
+    1000,
+    1792
+  ],
+  "observable_shape": [
+    1000,
+    1
+  ],
+  "check_shape": [
+    1000,
+    6735
+  ],
+  "prediction_shape": [
+    1000,
+    1
+  ],
+  "unique_check_patterns": 1000
+}

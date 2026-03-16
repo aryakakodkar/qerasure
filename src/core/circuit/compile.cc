@@ -83,6 +83,8 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
     qubit_reset_operation_indices.resize(max_qubit_index_ + 1);
     qubit_skippable_operation_indices.resize(max_qubit_index_ + 1);
     qubit_last_check_operation_index.assign(max_qubit_index_ + 1, -1);
+    qubit_final_measurement_operation_index.assign(max_qubit_index_ + 1, -1);
+    qubit_tail_start_operation_index.assign(max_qubit_index_ + 1, 0);
     std::vector<std::vector<uint32_t>> qubit_check_event_indices(max_qubit_index_ + 1);
     
     // TODO: Need to check if qubits that might be erased are involved in ERROR ops or MEASUREMENTS
@@ -109,6 +111,9 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
                     mark_qubit_operation(target);
                     if (is_erasure_skippable_op(instr.op)) {
                         mark_qubit_skippable(target);
+                    }
+                    if (is_measurement_op(instr.op)) {
+                        qubit_final_measurement_operation_index[target] = static_cast<int32_t>(op_index);
                     }
                 }
             }
@@ -227,8 +232,15 @@ CompiledErasureProgram::CompiledErasureProgram(const ErasureCircuit& circuit, co
         const std::vector<uint32_t>& local_check_ops = qubit_check_operation_indices[qubit];
         const std::vector<uint32_t>& local_reset_ops = qubit_reset_operation_indices[qubit];
         if (local_check_events.empty()) {
+            qubit_tail_start_operation_index[qubit] = 0;
             continue;
         }
+
+        uint32_t tail_start_local_idx = 0;
+        if (max_persistence_ > 0 && max_persistence_ < local_check_events.size()) {
+            tail_start_local_idx = static_cast<uint32_t>(local_check_events.size() - max_persistence_);
+        }
+        qubit_tail_start_operation_index[qubit] = local_check_ops[tail_start_local_idx];
 
         for (uint32_t local_idx = 0; local_idx < local_check_events.size(); ++local_idx) {
             const uint32_t check_event = local_check_events[local_idx];

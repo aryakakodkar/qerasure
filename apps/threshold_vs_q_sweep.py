@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import json
 import multiprocessing as mp
 import random
@@ -22,6 +21,12 @@ import stim  # noqa: F401
 import qerasure as qe
 
 _PM_MODULE = None
+
+try:
+    sys.stdout.reconfigure(line_buffering=True, write_through=True)
+    sys.stderr.reconfigure(line_buffering=True, write_through=True)
+except AttributeError:
+    pass
 
 
 def _log(message: str) -> None:
@@ -224,8 +229,6 @@ def run_single_point(
     check_prob: float,
     pauli_prob: float,
     seed: int,
-    sample_threads: int,
-    decode_threads: int,
     max_batch_bytes: int,
     single_qubit_errors: bool,
 ) -> dict:
@@ -260,14 +263,14 @@ def run_single_point(
     )
 
     t0 = time.perf_counter()
-    dets, obs, checks = sampler.sample(num_shots=shots, seed=seed, num_threads=sample_threads)
+    dets, obs, checks = sampler.sample(num_shots=shots, seed=seed, num_threads=1)
     t1 = time.perf_counter()
     predictions, failed_mask = decode_batch_allow_failures(
         grouped_decoder,
         dem_builder,
         dets,
         checks,
-        num_threads=decode_threads,
+        num_threads=1,
     )
     t2 = time.perf_counter()
 
@@ -324,8 +327,6 @@ def run_single_point_job(job: dict) -> tuple[dict, dict]:
         check_prob=float(job["q_check"]),
         pauli_prob=float(job["p_pauli"]),
         seed=int(job["seed"]),
-        sample_threads=int(job["sample_threads"]),
-        decode_threads=1,
         max_batch_bytes=int(job["max_batch_bytes"]),
         single_qubit_errors=bool(job["single_qubit_errors"]),
     )
@@ -464,7 +465,7 @@ def main() -> None:
         "--sweep-backend",
         type=str,
         default="process",
-        choices=["process", "thread"],
+        choices=["process"],
         help="Parallel backend for outer sweep workers.",
     )
     parser.add_argument(
@@ -510,6 +511,10 @@ def main() -> None:
         _log(
             f"warning: forcing decoder threads to 1 (received --decode-threads={args.decode_threads})."
         )
+    if args.sweep_backend != "process":
+        _log(
+            f"warning: forcing sweep backend to 'process' (received --sweep-backend={args.sweep_backend})."
+        )
 
     # two_qubit_only=False means single_qubit_errors=True in builder.
     cases = [
@@ -554,14 +559,12 @@ def main() -> None:
                                 "p_pauli": float(p_pauli),
                                 "shots": int(args.shots),
                                 "seed": int(seed),
-                                "sample_threads": int(args.num_threads),
                                 "max_batch_bytes": int(args.max_batch_bytes),
                             }
                         )
 
             case_rows_map: dict[str, list[dict]] = {case["label"]: [] for case in cases}
             max_workers = min(int(args.sweep_threads), max(1, len(jobs)))
-            executor_cls = ProcessPoolExecutor if args.sweep_backend == "process" else ThreadPoolExecutor
 
             def record_result(job: dict, row: dict) -> None:
                 nonlocal job_idx
@@ -582,26 +585,15 @@ def main() -> None:
                     record_result(completed_job, row)
             else:
                 try:
-                    executor_kwargs = {"max_workers": max_workers}
-                    # For process backend, prefer `fork` so workers inherit already-imported
-                    # pymatching/scipy state and avoid slow spawn-time imports.
-                    if executor_cls is ProcessPoolExecutor:
-                        _ = get_pymatching()
-                        try:
-                            executor_kwargs["mp_context"] = mp.get_context("fork")
-                        except ValueError:
-                            pass
-                    with executor_cls(**executor_kwargs) as pool:
-                        future_to_job = {
-                            pool.submit(run_single_point_job, job): job
-                            for job in jobs
-                        }
-                        for future in as_completed(future_to_job):
-                            completed_job, row = future.result()
+                    _ = get_pymatching()
+                    with mp.get_context("fork").Pool(processes=max_workers) as pool:
+                        for completed_job, row in pool.imap_unordered(
+                            run_single_point_job, jobs, chunksize=1
+                        ):
                             record_result(completed_job, row)
                 except (PermissionError, OSError) as exc:
                     _log(
-                        f"warning: failed to start parallel sweep backend '{args.sweep_backend}'"
+                        f"warning: failed to start parallel sweep backend 'process'"
                         f" ({type(exc).__name__}: {exc}); falling back to sequential."
                     )
                     for job in jobs:
