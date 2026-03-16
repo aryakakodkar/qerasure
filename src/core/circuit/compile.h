@@ -84,6 +84,11 @@ struct CompiledErasureProgram  {
     std::vector<std::vector<uint32_t>> qubit_skippable_operation_indices;
     // For each qubit, operation index of its final erasure check (-1 if never checked).
     std::vector<int32_t> qubit_last_check_operation_index;
+    // For each qubit, operation index of its final measurement (-1 if never measured).
+    std::vector<int32_t> qubit_final_measurement_operation_index;
+    // For each qubit, the earliest operation index that can affect hidden-tail logic
+    // due to the persistence horizon alone, before considering shot-specific flags.
+    std::vector<uint32_t> qubit_tail_start_operation_index;
 
     inline uint32_t max_qubit_index() const { return max_qubit_index_; }
     inline uint32_t num_checks() const { return num_checks_; }

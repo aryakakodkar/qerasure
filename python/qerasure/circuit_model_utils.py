@@ -509,6 +509,8 @@ class SurfaceCodeBatchDecoder:
         program: CompiledErasureProgram | object,
         dem_builder: Optional[SurfDemBuilder] = None,
         max_batch_bytes: int = 256 * 1024 * 1024,
+        grouping_sample_size: int = 256,
+        grouping_unique_ratio_threshold: float = 0.5,
     ):
         if isinstance(program, CompiledErasureProgram):
             cpp_program = program._to_cpp_program()
@@ -520,6 +522,12 @@ class SurfaceCodeBatchDecoder:
         self._max_batch_bytes = int(max_batch_bytes)
         if self._max_batch_bytes <= 0:
             raise ValueError("max_batch_bytes must be positive.")
+        self._grouping_sample_size = int(grouping_sample_size)
+        if self._grouping_sample_size <= 0:
+            raise ValueError("grouping_sample_size must be positive.")
+        self._grouping_unique_ratio_threshold = float(grouping_unique_ratio_threshold)
+        if not 0.0 <= self._grouping_unique_ratio_threshold <= 1.0:
+            raise ValueError("grouping_unique_ratio_threshold must be between 0 and 1.")
         self._cpp_program = cpp_program
 
     def _compute_shots_per_chunk(self, num_detectors: int, num_checks: int) -> int:
@@ -576,6 +584,109 @@ class SurfaceCodeBatchDecoder:
         group_indices = np.split(order.astype(np.int64, copy=False), boundaries)
         return group_indices, unique_checks
 
+    def _should_use_grouping(self, check_chunk) -> bool:
+        import numpy as np
+
+        shots = int(check_chunk.shape[0])
+        if shots <= 1:
+            return False
+
+        sample_size = min(shots, self._grouping_sample_size)
+        packed_sample = np.packbits(check_chunk[:sample_size], axis=1, bitorder="little")
+        unique_sample = int(np.unique(packed_sample, axis=0).shape[0])
+        unique_ratio = unique_sample / max(1, sample_size)
+        return unique_ratio < self._grouping_unique_ratio_threshold
+
+    def _decode_one_shot(self, det_row, check_row, dem_builder):
+        import numpy as np
+        import pymatching as pm
+
+        decoded_circuit = dem_builder.build_decoded_circuit(check_row, verbose=False)
+        decoded_dem = decoded_circuit.detector_error_model(
+            decompose_errors=True,
+            approximate_disjoint_errors=True,
+        )
+        matching = pm.Matching.from_detector_error_model(decoded_dem)
+        pred = np.asarray(matching.decode(det_row), dtype=np.uint8)
+        if pred.ndim == 0:
+            pred = pred.reshape(1)
+        return pred
+
+    def _decode_chunk_ungrouped(self, det_chunk, check_chunk, dem_builder):
+        import numpy as np
+
+        shots = int(det_chunk.shape[0])
+        if shots == 0:
+            return np.zeros((0, 0), dtype=np.uint8)
+
+        predictions = None
+        for shot in range(shots):
+            pred = self._decode_one_shot(det_chunk[shot], check_chunk[shot], dem_builder)
+            if predictions is None:
+                predictions = np.zeros((shots, max(1, int(pred.shape[0]))), dtype=np.uint8)
+            elif pred.shape[0] > predictions.shape[1]:
+                grown = np.zeros((shots, int(pred.shape[0])), dtype=np.uint8)
+                grown[:, : predictions.shape[1]] = predictions
+                predictions = grown
+            predictions[shot, : pred.shape[0]] = pred
+
+        if predictions is None:
+            return np.zeros((shots, 0), dtype=np.uint8)
+        return predictions
+
+    def _decode_chunk_ungrouped_parallel(self, det_chunk, check_chunk, num_threads: int):
+        import numpy as np
+        import threading
+        from concurrent.futures import ThreadPoolExecutor
+
+        shots = int(det_chunk.shape[0])
+        if shots == 0:
+            return np.zeros((0, 0), dtype=np.uint8)
+
+        workers = min(max(1, int(num_threads)), shots)
+        if workers <= 1:
+            return self._decode_chunk_ungrouped(det_chunk, check_chunk, self._dem_builder)
+
+        thread_state = threading.local()
+        ranges = []
+        for worker in range(workers):
+            start = (shots * worker) // workers
+            end = (shots * (worker + 1)) // workers
+            if start < end:
+                ranges.append((start, end))
+
+        def worker_decode(work_range):
+            start, end = work_range
+            dem_builder = getattr(thread_state, "dem_builder", None)
+            if dem_builder is None:
+                dem_builder = SurfDemBuilder(self._cpp_program)
+                thread_state.dem_builder = dem_builder
+            local_preds = []
+            width = 0
+            for shot in range(start, end):
+                pred = self._decode_one_shot(det_chunk[shot], check_chunk[shot], dem_builder)
+                local_preds.append(pred)
+                width = max(width, int(pred.shape[0]))
+            block = np.zeros((end - start, max(1, width)), dtype=np.uint8)
+            for row, pred in enumerate(local_preds):
+                block[row, : pred.shape[0]] = pred
+            return start, end, block
+
+        predictions = None
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            for start, end, block in pool.map(worker_decode, ranges):
+                if predictions is None:
+                    predictions = np.zeros((shots, int(block.shape[1])), dtype=np.uint8)
+                elif block.shape[1] > predictions.shape[1]:
+                    grown = np.zeros((shots, int(block.shape[1])), dtype=np.uint8)
+                    grown[:, : predictions.shape[1]] = predictions
+                    predictions = grown
+                predictions[start:end, : block.shape[1]] = block
+
+        if predictions is None:
+            return np.zeros((shots, 0), dtype=np.uint8)
+        return predictions
+
     def _decode_chunk_grouped(self, det_chunk, check_chunk, dem_builder):
         """Decode one shot-chunk by grouping identical check patterns.
 
@@ -591,6 +702,8 @@ class SurfaceCodeBatchDecoder:
         shots = int(det_chunk.shape[0])
         if shots == 0:
             return np.zeros((0, 0), dtype=np.uint8)
+        if not self._should_use_grouping(check_chunk):
+            return self._decode_chunk_ungrouped(det_chunk, check_chunk, dem_builder)
 
         group_indices, group_check_rows = self._group_check_patterns(check_chunk)
 
@@ -630,6 +743,8 @@ class SurfaceCodeBatchDecoder:
         shots = int(det_chunk.shape[0])
         if shots == 0:
             return np.zeros((0, 0), dtype=np.uint8)
+        if not self._should_use_grouping(check_chunk):
+            return self._decode_chunk_ungrouped_parallel(det_chunk, check_chunk, num_threads)
 
         group_indices, group_check_rows = self._group_check_patterns(check_chunk)
         num_groups = len(group_indices)

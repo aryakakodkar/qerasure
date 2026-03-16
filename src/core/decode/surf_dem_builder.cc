@@ -65,6 +65,58 @@ struct LocalTargetChannelAccum {
 	double p_z;
 };
 
+// Dense per-qubit accumulator reused inside hot decoding loops.
+class DenseTargetAccumulator {
+	public:
+	explicit DenseTargetAccumulator(uint32_t num_qubits)
+		: p_x_(num_qubits, 0.0), p_y_(num_qubits, 0.0), p_z_(num_qubits, 0.0) {
+		touched_targets_.reserve(std::min<uint32_t>(num_qubits, 64));
+	}
+
+	void clear() {
+		for (const uint32_t target : touched_targets_) {
+			p_x_[target] = 0.0;
+			p_y_[target] = 0.0;
+			p_z_[target] = 0.0;
+		}
+		touched_targets_.clear();
+	}
+
+	void add(uint32_t target_qubit, double p_x, double p_y, double p_z) {
+		if (p_x <= 0.0 && p_y <= 0.0 && p_z <= 0.0) {
+			return;
+		}
+		if (p_x_[target_qubit] == 0.0 && p_y_[target_qubit] == 0.0 && p_z_[target_qubit] == 0.0) {
+			touched_targets_.push_back(target_qubit);
+		}
+		p_x_[target_qubit] += p_x;
+		p_y_[target_qubit] += p_y;
+		p_z_[target_qubit] += p_z;
+	}
+
+	const std::vector<uint32_t>& touched_targets() const {
+		return touched_targets_;
+	}
+
+	double p_x(uint32_t target_qubit) const {
+		return p_x_[target_qubit];
+	}
+
+	double p_y(uint32_t target_qubit) const {
+		return p_y_[target_qubit];
+	}
+
+	double p_z(uint32_t target_qubit) const {
+		return p_z_[target_qubit];
+	}
+
+	private:
+	std::vector<double> p_x_;
+	std::vector<double> p_y_;
+	std::vector<double> p_z_;
+	std::vector<uint32_t> touched_targets_;
+};
+
 uint64_t make_op_qubit_key(uint32_t op_index, uint32_t qubit) {
 	return (static_cast<uint64_t>(op_index) << 32) | qubit;
 }
@@ -131,6 +183,7 @@ void SurfDemBuilder::add_tail_hidden_injections(
 
 	double p_unerased = 1.0;
 	std::vector<double> erased_mass(max_persistence + 1, 0.0);
+	std::vector<double> next_erased_mass(max_persistence + 1, 0.0);
 
 	const std::vector<uint32_t>& qubit_ops = program_.qubit_operation_indices.at(qubit);
 	const std::vector<uint32_t>& local_check_events = qubit_check_events_.at(qubit);
@@ -160,12 +213,11 @@ void SurfDemBuilder::add_tail_hidden_injections(
 			}
 			(*buckets)[emit_op_index].push_back({emit_op_index, target_qubit, p_x, p_y, p_z});
 		};
-
 		for (const auto& onset : op_group.onsets) {
 			if (onset.qubit_index != qubit) {
 				continue;
 			}
-			std::vector<double> next_erased_mass = erased_mass;
+			next_erased_mass = erased_mass;
 			const double p_onset_from_unerased = p_unerased * onset.probability;
 			p_unerased *= (1.0 - onset.probability);
 			next_erased_mass[1] += p_onset_from_unerased;
@@ -261,7 +313,7 @@ void SurfDemBuilder::add_tail_hidden_injections(
 			const uint8_t observed = (*check_results)[local_check_events[local_check_cursor]];
 			++local_check_cursor;
 
-			std::vector<double> next_erased_mass(max_persistence + 1, 0.0);
+			std::fill(next_erased_mass.begin(), next_erased_mass.end(), 0.0);
 			if (observed == 0) {
 				p_unerased *= (1.0 - check.false_positive_probability);
 				for (uint32_t state = 1; state < max_persistence; ++state) {
@@ -300,6 +352,9 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 		program_.operation_groups.size());
 	std::vector<uint32_t> touched_emit_ops;
 	touched_emit_ops.reserve(256);
+	std::vector<OnsetBranch> onset_branches;
+	onset_branches.reserve(128);
+	DenseTargetAccumulator local_channels(program_.max_qubit_index() + 1);
 
 	if (check_results == nullptr) {
 		throw std::invalid_argument(
@@ -362,8 +417,11 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 		// Likelihood of the observed check pattern in this window under a no-erasure path.
 		// For fixed false-positive rate x and a checks, this reduces to (1-x)^(a-1) * x.
 		double no_erasure_check_likelihood = 1.0;
-		std::vector<OnsetBranch> onset_branches;
-		onset_branches.reserve(end_offset - start_offset + 1);
+		onset_branches.clear();
+		const size_t needed_branch_capacity = static_cast<size_t>(end_offset - start_offset + 1);
+		if (needed_branch_capacity > onset_branches.capacity()) {
+			onset_branches.reserve(needed_branch_capacity);
+		}
 
 		for (uint32_t offset = start_offset; offset <= end_offset; ++offset) {
 			const uint32_t op_index = program_.qubit_operation_indices.at(qubit)[offset];
@@ -487,22 +545,11 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 			};
 		for (uint32_t offset = start_offset; offset <= end_offset; ++offset) {
 			const uint32_t op_index = program_.qubit_operation_indices.at(qubit)[offset];
-			std::vector<LocalTargetChannelAccum> local_channels;
+			local_channels.clear();
 			double p_onset_at_op = 0.0;
 			const auto accumulate_channel = [&local_channels](
 											 uint32_t target_qubit, double p_x, double p_y, double p_z) {
-				if (p_x <= 0.0 && p_y <= 0.0 && p_z <= 0.0) {
-					return;
-				}
-				for (auto& entry : local_channels) {
-					if (entry.target_qubit == target_qubit) {
-						entry.p_x += p_x;
-						entry.p_y += p_y;
-						entry.p_z += p_z;
-						return;
-					}
-				}
-				local_channels.push_back({target_qubit, p_x, p_y, p_z});
+				local_channels.add(target_qubit, p_x, p_y, p_z);
 			};
 
 			while (branch_index < onset_branches.size() &&
@@ -587,9 +634,13 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 			}
 
 			const uint32_t emit_op_index = op_to_emit_op_index_[op_index];
-			for (const auto& entry : local_channels) {
+			for (const uint32_t target_qubit : local_channels.touched_targets()) {
 				merge_into_emit_bucket(
-					emit_op_index, entry.target_qubit, entry.p_x, entry.p_y, entry.p_z);
+					emit_op_index,
+					target_qubit,
+					local_channels.p_x(target_qubit),
+					local_channels.p_y(target_qubit),
+					local_channels.p_z(target_qubit));
 			}
 		}
 
@@ -610,45 +661,14 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 	// This captures cases where a qubit remains erased despite an unflagged final check.
 	const uint32_t num_qubits = program_.max_qubit_index() + 1;
 	for (uint32_t qubit = 0; qubit < num_qubits; ++qubit) {
-		const std::vector<uint32_t>& qubit_ops = program_.qubit_operation_indices.at(qubit);
-		if (qubit_ops.empty()) {
-			continue;
-		}
-
-		// Find final measurement operation touching this qubit.
-		int32_t final_meas_op = -1;
-		for (auto it = qubit_ops.rbegin(); it != qubit_ops.rend(); ++it) {
-			const uint32_t op_index = *it;
-			const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
-			if (!op_group.stim_instruction.has_value()) {
-				continue;
-			}
-			const circuit::Instruction& instr = op_group.stim_instruction.value();
-			if (!circuit::is_measurement_op(instr.op)) {
-				continue;
-			}
-			if (std::find(instr.targets.begin(), instr.targets.end(), qubit) == instr.targets.end()) {
-				continue;
-			}
-			final_meas_op = static_cast<int32_t>(op_index);
-			break;
-		}
+		const int32_t final_meas_op = program_.qubit_final_measurement_operation_index.at(qubit);
 		if (final_meas_op < 0) {
 			continue;
 		}
 
-		uint32_t start_op = 0;
+		uint32_t start_op = program_.qubit_tail_start_operation_index.at(qubit);
 		const std::vector<uint32_t>& local_check_events = qubit_check_events_[qubit];
-		const std::vector<uint32_t>& local_check_ops = program_.qubit_check_operation_indices.at(qubit);
 		if (!local_check_events.empty()) {
-			const uint32_t last_local = static_cast<uint32_t>(local_check_events.size() - 1);
-			uint32_t lookback_local = 0;
-			if (program_.max_persistence() <= last_local) {
-				lookback_local = last_local - program_.max_persistence() + 1;
-			}
-			const uint32_t lookback_event = local_check_events[lookback_local];
-			uint32_t lookback_op = check_event_to_op_index_[lookback_event];
-
 			int32_t latest_flagged_event = -1;
 			for (const uint32_t event_idx : local_check_events) {
 				if ((*check_results)[event_idx] == 1) {
@@ -659,9 +679,8 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 				const uint32_t flagged_op =
 					check_event_to_op_index_[static_cast<uint32_t>(latest_flagged_event)];
 				// Start after the latest flagged check/reset point.
-				lookback_op = std::max(lookback_op, flagged_op + 1);
+				start_op = std::max(start_op, flagged_op + 1);
 			}
-			start_op = lookback_op;
 		}
 
 		add_tail_hidden_injections(

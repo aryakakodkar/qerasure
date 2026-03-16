@@ -20,8 +20,11 @@ void bind_stream_sampler(py::module_& m) {
 			"sample_syndromes",
 			[](simulator::StreamSampler& sampler, uint32_t num_shots, uint32_t seed,
 			   uint32_t num_threads) {
-				const simulator::SyndromeSampleBatch sampled =
-					sampler.sample_syndromes(num_shots, seed, num_threads);
+				simulator::SyndromeSampleBatch sampled;
+				{
+					py::gil_scoped_release release;
+					sampled = sampler.sample_syndromes(num_shots, seed, num_threads);
+				}
 
 				py::array_t<uint8_t> dets(
 					{sampled.num_shots, sampled.num_detectors});

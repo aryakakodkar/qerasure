@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import multiprocessing as mp
 import random
 import sys
 import time
@@ -21,6 +22,17 @@ if str(PYTHON_SRC) not in sys.path:
     sys.path.insert(0, str(PYTHON_SRC))
 
 import qerasure as qe
+
+try:
+    sys.stdout.reconfigure(line_buffering=True, write_through=True)
+    sys.stderr.reconfigure(line_buffering=True, write_through=True)
+except AttributeError:
+    pass
+
+
+def _log(message: str) -> None:
+    sys.stdout.write(f"{message}\n")
+    sys.stdout.flush()
 
 
 def parse_configs(configs_text: str) -> list[tuple[int, int]]:
@@ -75,11 +87,10 @@ def run_single_point(
     shots: int,
     p_tqe: float,
     seed: int,
-    sample_threads: int,
-    decode_threads: int,
     max_batch_bytes: int,
     single_qubit_errors: bool,
     post_clifford_pauli_prob: float,
+    check_prob: float = 0.005,
 ) -> dict:
     circuit = qe.SurfaceCodeRotated(distance).build_circuit(
         rounds=rounds,
@@ -91,7 +102,7 @@ def run_single_point(
     )
 
     model = qe.ErasureModel(
-        3,
+        2,
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.TQGSpreadModel(
@@ -99,8 +110,8 @@ def run_single_point(
             qe.PauliChannel(0.25, 0.25, 0.25),
         ),
     )
-    model.check_false_negative_prob = 0.01
-    model.check_false_positive_prob = 0.01
+    model.check_false_negative_prob = check_prob
+    model.check_false_positive_prob = check_prob
 
     compiled = qe.CompiledErasureProgram(circuit, model)
     sampler = qe.StreamSampler(compiled)
@@ -112,9 +123,9 @@ def run_single_point(
     )
 
     t0 = time.perf_counter()
-    dets, obs, checks = sampler.sample(num_shots=shots, seed=seed, num_threads=sample_threads)
+    dets, obs, checks = sampler.sample(num_shots=shots, seed=seed, num_threads=1)
     t1 = time.perf_counter()
-    predictions = grouped_decoder.decode_batch(dets, checks, num_threads=decode_threads)
+    predictions = grouped_decoder.decode_batch(dets, checks, num_threads=1)
     t2 = time.perf_counter()
 
     truths = obs if obs.ndim == 2 else obs[:, None]
@@ -139,6 +150,24 @@ def run_single_point(
     }
 
 
+def run_single_point_task(task: dict) -> dict:
+    row = run_single_point(
+        distance=int(task["distance"]),
+        rounds=int(task["rounds"]),
+        shots=int(task["shots"]),
+        p_tqe=float(task["p_tqe"]),
+        seed=int(task["seed"]),
+        max_batch_bytes=int(task["max_batch_bytes"]),
+        single_qubit_errors=bool(task["single_qubit_errors"]),
+        post_clifford_pauli_prob=float(task["post_clifford_pauli_prob"]),
+        check_prob=float(task["check_prob"]),
+    )
+    row["_task_index"] = int(task["task_index"])
+    row["_cfg_index"] = int(task["cfg_index"])
+    row["_p_index"] = int(task["p_index"])
+    return row
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -153,8 +182,12 @@ def main() -> None:
     parser.add_argument("--p-min", type=float, default=1e-3)
     parser.add_argument("--p-max", type=float, default=3e-2)
     parser.add_argument("--p-values", type=str, default=None)
-    parser.add_argument("--num-threads", type=int, default=1)
-    parser.add_argument("--decode-threads", type=int, default=None)
+    parser.add_argument(
+        "--num-threads",
+        type=int,
+        default=1,
+        help="Number of sweep-worker processes. Sampling and decoding remain single-threaded per worker.",
+    )
     parser.add_argument("--max-batch-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument(
         "--single-qubit-errors",
@@ -182,35 +215,69 @@ def main() -> None:
 
     configs = parse_configs(args.configs)
     p_values = make_p_values(args.p_values, args.p_min, args.p_max, args.points)
-    decode_threads = args.decode_threads if args.decode_threads is not None else args.num_threads
     if args.post_clifford_pauli_prob < 0.0 or args.post_clifford_pauli_prob > 1.0:
         raise ValueError("--post-clifford-pauli-prob must be in [0, 1].")
+    if args.num_threads <= 0:
+        raise ValueError("--num-threads must be positive.")
 
-    rows: list[dict] = []
-    t0 = time.perf_counter()
+    tasks: list[dict] = []
+    task_index = 0
     for cfg_idx, (distance, rounds) in enumerate(configs):
         for p_idx, p_tqe in enumerate(p_values):
-            seed = args.seed + cfg_idx * 1_000_000 + p_idx
-            row = run_single_point(
-                distance=distance,
-                rounds=rounds,
-                shots=args.shots,
-                p_tqe=float(p_tqe),
-                seed=seed,
-                sample_threads=args.num_threads,
-                decode_threads=decode_threads,
-                max_batch_bytes=args.max_batch_bytes,
-                single_qubit_errors=args.single_qubit_errors,
-                post_clifford_pauli_prob=float(args.post_clifford_pauli_prob),
+            tasks.append(
+                {
+                    "task_index": task_index,
+                    "cfg_index": cfg_idx,
+                    "p_index": p_idx,
+                    "distance": distance,
+                    "rounds": rounds,
+                    "shots": args.shots,
+                    "p_tqe": float(p_tqe),
+                    "seed": args.seed + cfg_idx * 1_000_000 + p_idx,
+                    "max_batch_bytes": args.max_batch_bytes,
+                    "single_qubit_errors": bool(args.single_qubit_errors),
+                    "post_clifford_pauli_prob": float(args.post_clifford_pauli_prob),
+                    "check_prob": 0.005,
+                }
             )
-            rows.append(row)
-            print(
-                f"[cfg {cfg_idx + 1}/{len(configs)} | p {p_idx + 1}/{len(p_values)}] "
-                f"(d={distance},r={rounds}) p={p_tqe:.6g} "
+            task_index += 1
+
+    rows_by_index: list[dict | None] = [None] * len(tasks)
+    t0 = time.perf_counter()
+    if args.num_threads == 1:
+        for task in tasks:
+            row = run_single_point_task(task)
+            rows_by_index[int(row["_task_index"])] = row
+            _log(
+                f"[cfg {int(row['_cfg_index']) + 1}/{len(configs)} | "
+                f"p {int(row['_p_index']) + 1}/{len(p_values)}] "
+                f"(d={row['distance']},r={row['qec_rounds']}) "
+                f"p={row['p_two_qubit_erasure']:.6g} "
                 f"LER={row['logical_error_rate']:.6g} "
                 f"LER/round={row['logical_error_rate_per_round']:.6g}"
             )
+    else:
+        ctx = mp.get_context("fork")
+        with ctx.Pool(processes=int(args.num_threads)) as pool:
+            for row in pool.imap_unordered(run_single_point_task, tasks, chunksize=1):
+                rows_by_index[int(row["_task_index"])] = row
+                _log(
+                    f"[cfg {int(row['_cfg_index']) + 1}/{len(configs)} | "
+                    f"p {int(row['_p_index']) + 1}/{len(p_values)}] "
+                    f"(d={row['distance']},r={row['qec_rounds']}) "
+                    f"p={row['p_two_qubit_erasure']:.6g} "
+                    f"LER={row['logical_error_rate']:.6g} "
+                    f"LER/round={row['logical_error_rate_per_round']:.6g}"
+                )
     elapsed = time.perf_counter() - t0
+    rows = []
+    for row in rows_by_index:
+        if row is None:
+            raise RuntimeError("Missing sweep result row after task execution.")
+        row.pop("_task_index", None)
+        row.pop("_cfg_index", None)
+        row.pop("_p_index", None)
+        rows.append(row)
 
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -247,9 +314,9 @@ def main() -> None:
     plt.savefig(args.plot_out, dpi=220)
     plt.close()
 
-    print(f"\nSaved JSON: {args.json_out}")
-    print(f"Saved Plot: {args.plot_out}")
-    print(f"Elapsed: {elapsed:.2f}s")
+    _log(f"\nSaved JSON: {args.json_out}")
+    _log(f"Saved Plot: {args.plot_out}")
+    _log(f"Elapsed: {elapsed:.2f}s")
 
 
 if __name__ == "__main__":
