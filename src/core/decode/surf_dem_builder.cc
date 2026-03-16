@@ -114,6 +114,181 @@ SurfDemBuilder::SurfDemBuilder(const circuit::CompiledErasureProgram& program) :
 	}
 }
 
+void SurfDemBuilder::add_tail_hidden_injections(
+	const std::vector<uint8_t>* check_results,
+	uint32_t qubit,
+	uint32_t start_op,
+	uint32_t final_meas_op,
+	SpreadInjectionBuckets* buckets,
+	SkippableReweightMap* skippable_reweights) const {
+	if (buckets == nullptr) {
+		throw std::invalid_argument("tail hidden injections require non-null buckets");
+	}
+	const uint32_t max_persistence = program_.max_persistence();
+	if (max_persistence == 0) {
+		throw std::logic_error("max_persistence must be positive");
+	}
+
+	double p_unerased = 1.0;
+	std::vector<double> erased_mass(max_persistence + 1, 0.0);
+
+	const std::vector<uint32_t>& qubit_ops = program_.qubit_operation_indices.at(qubit);
+	const std::vector<uint32_t>& local_check_events = qubit_check_events_.at(qubit);
+	const std::vector<uint32_t>& local_check_ops = program_.qubit_check_operation_indices.at(qubit);
+	const std::vector<uint32_t>& qubit_skippable_ops =
+		program_.qubit_skippable_operation_indices.at(qubit);
+
+	auto start_it = std::lower_bound(qubit_ops.begin(), qubit_ops.end(), start_op);
+	auto end_it = std::upper_bound(
+		start_it, qubit_ops.end(), static_cast<uint32_t>(final_meas_op));
+	size_t local_check_cursor = static_cast<size_t>(
+		std::lower_bound(local_check_ops.begin(), local_check_ops.end(), start_op) -
+		local_check_ops.begin());
+	size_t skippable_index = static_cast<size_t>(
+		std::lower_bound(qubit_skippable_ops.begin(), qubit_skippable_ops.end(), start_op) -
+		qubit_skippable_ops.begin());
+
+	for (auto it = start_it; it != end_it; ++it) {
+		const uint32_t op_index = *it;
+		const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
+		double p_onset_at_op = 0.0;
+
+		auto merge_event = [&](uint32_t emit_op_index, uint32_t target_qubit, double p_x, double p_y,
+							   double p_z) {
+			if (p_x <= 0.0 && p_y <= 0.0 && p_z <= 0.0) {
+				return;
+			}
+			(*buckets)[emit_op_index].push_back({emit_op_index, target_qubit, p_x, p_y, p_z});
+		};
+
+		for (const auto& onset : op_group.onsets) {
+			if (onset.qubit_index != qubit) {
+				continue;
+			}
+			std::vector<double> next_erased_mass = erased_mass;
+			const double p_onset_from_unerased = p_unerased * onset.probability;
+			p_unerased *= (1.0 - onset.probability);
+			next_erased_mass[1] += p_onset_from_unerased;
+			p_onset_at_op += p_onset_from_unerased;
+			for (uint32_t state = 1; state <= max_persistence; ++state) {
+				const double fired = erased_mass[state] * onset.probability;
+				next_erased_mass[state] -= fired;
+				next_erased_mass[std::min(max_persistence, state + 1)] += fired;
+				p_onset_at_op += fired;
+			}
+			erased_mass.swap(next_erased_mass);
+		}
+		for (const auto& onset_pair : op_group.onset_pairs) {
+			if (onset_pair.qubit_index1 != qubit && onset_pair.qubit_index2 != qubit) {
+				continue;
+			}
+			const double p_onset = p_unerased * (0.5 * onset_pair.probability);
+			erased_mass[1] += p_onset;
+			p_unerased -= p_onset;
+			p_onset_at_op += p_onset;
+			const uint32_t other_qubit =
+				(onset_pair.qubit_index1 == qubit) ? onset_pair.qubit_index2 : onset_pair.qubit_index1;
+			const PauliChannel& onset_channel = program_.model().onset;
+			merge_event(
+				op_to_emit_op_index_[op_index],
+				other_qubit,
+				p_onset * onset_channel.p_x,
+				p_onset * onset_channel.p_y,
+				p_onset * onset_channel.p_z);
+		}
+
+		if (p_onset_at_op > 0.0) {
+			for (const auto& spread : op_group.onset_spreads) {
+				if (spread.source_qubit_index != qubit) {
+					continue;
+				}
+				merge_event(
+					op_to_emit_op_index_[op_index],
+					spread.aff_qubit_index,
+					p_onset_at_op * spread.spread_probability_channel.p_x,
+					p_onset_at_op * spread.spread_probability_channel.p_y,
+					p_onset_at_op * spread.spread_probability_channel.p_z);
+			}
+		}
+
+		double p_erased_by_op = 0.0;
+		for (uint32_t state = 1; state <= max_persistence; ++state) {
+			p_erased_by_op += erased_mass[state];
+		}
+
+		while (skippable_index < qubit_skippable_ops.size() &&
+			   qubit_skippable_ops[skippable_index] < op_index) {
+			++skippable_index;
+		}
+		if (skippable_reweights != nullptr &&
+			skippable_index < qubit_skippable_ops.size() &&
+			qubit_skippable_ops[skippable_index] == op_index) {
+			const double p_unerased_by_op = std::clamp(1.0 - p_erased_by_op, 0.0, 1.0);
+			const uint64_t key = make_op_qubit_key(op_index, qubit);
+			const auto existing_it = skippable_reweights->find(key);
+			if (existing_it == skippable_reweights->end() ||
+				p_unerased_by_op < existing_it->second) {
+				(*skippable_reweights)[key] = p_unerased_by_op;
+			}
+		}
+
+		if (p_erased_by_op > 0.0) {
+			for (const auto& spread : op_group.persistent_spreads) {
+				if (spread.source_qubit_index != qubit) {
+					continue;
+				}
+				merge_event(
+					op_to_emit_op_index_[op_index],
+					spread.aff_qubit_index,
+					p_erased_by_op * spread.spread_probability_channel.p_x,
+					p_erased_by_op * spread.spread_probability_channel.p_y,
+					p_erased_by_op * spread.spread_probability_channel.p_z);
+			}
+		}
+
+		for (const auto& check : op_group.checks) {
+			if (check.qubit_index != qubit) {
+				continue;
+			}
+			while (local_check_cursor < local_check_ops.size() &&
+				   local_check_ops[local_check_cursor] < op_index) {
+				++local_check_cursor;
+			}
+			if (local_check_cursor >= local_check_ops.size() ||
+				local_check_ops[local_check_cursor] != op_index) {
+				throw std::logic_error("missing check event index for qubit/op in DEM builder");
+			}
+			const uint8_t observed = (*check_results)[local_check_events[local_check_cursor]];
+			++local_check_cursor;
+
+			std::vector<double> next_erased_mass(max_persistence + 1, 0.0);
+			if (observed == 0) {
+				p_unerased *= (1.0 - check.false_positive_probability);
+				for (uint32_t state = 1; state < max_persistence; ++state) {
+					next_erased_mass[state + 1] += erased_mass[state] * check.false_negative_probability;
+				}
+			} else if (observed == 1) {
+				// Tail windows start after the most recent flagged check, so any positive check
+				// here indicates an inconsistent input window.
+				throw std::logic_error("tail hidden injection window unexpectedly contains a flagged check");
+			} else {
+				throw std::invalid_argument("check_results must be binary");
+			}
+			erased_mass.swap(next_erased_mass);
+			break;
+		}
+
+		if (op_group.stim_instruction.has_value() &&
+			circuit::is_measurement_op(op_group.stim_instruction->op) &&
+			p_erased_by_op > 0.0) {
+			const uint32_t pre_emit_op_index =
+				(op_index == 0) ? op_to_emit_op_index_[op_index]
+								: op_to_emit_op_index_[op_index - 1];
+			merge_event(pre_emit_op_index, qubit, 0.5 * p_erased_by_op, 0.0, 0.0);
+		}
+	}
+}
+
 SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 	const std::vector<uint8_t>* check_results,
 	bool verbose,
@@ -489,62 +664,13 @@ SpreadInjectionBuckets SurfDemBuilder::compute_spread_injections(
 			start_op = lookback_op;
 		}
 
-		double p_no_erasure = 1.0;
-		auto start_it = std::lower_bound(qubit_ops.begin(), qubit_ops.end(), start_op);
-		auto end_it = std::upper_bound(
-			start_it, qubit_ops.end(), static_cast<uint32_t>(final_meas_op));
-		size_t local_check_cursor = static_cast<size_t>(
-			std::lower_bound(local_check_ops.begin(), local_check_ops.end(), start_op) -
-			local_check_ops.begin());
-		for (auto it = start_it; it != end_it; ++it) {
-			const uint32_t op_index = *it;
-			const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
-
-			for (const auto& onset : op_group.onsets) {
-				if (onset.qubit_index == qubit) {
-					p_no_erasure *= (1.0 - onset.probability);
-				}
-			}
-			for (const auto& onset_pair : op_group.onset_pairs) {
-				if (onset_pair.qubit_index1 == qubit || onset_pair.qubit_index2 == qubit) {
-					p_no_erasure *= (1.0 - 0.5 * onset_pair.probability);
-				}
-			}
-			for (const auto& check : op_group.checks) {
-				if (check.qubit_index != qubit) {
-					continue;
-				}
-				while (local_check_cursor < local_check_ops.size() &&
-					   local_check_ops[local_check_cursor] < op_index) {
-					++local_check_cursor;
-				}
-				if (local_check_cursor >= local_check_ops.size() ||
-					local_check_ops[local_check_cursor] != op_index) {
-					throw std::logic_error("missing check event index for qubit/op in DEM builder");
-				}
-				const uint8_t observed = (*check_results)[local_check_events[local_check_cursor]];
-				++local_check_cursor;
-				if (observed == 1) {
-					p_no_erasure *= check.false_positive_probability;
-				} else if (observed == 0) {
-					p_no_erasure *= (1.0 - check.false_positive_probability);
-				} else {
-					throw std::invalid_argument("check_results must be binary");
-				}
-				break;
-			}
-		}
-
-		p_no_erasure = std::clamp(p_no_erasure, 0.0, 1.0);
-		const double p_meas_x = 1.0 - p_no_erasure;
-		if (p_meas_x <= 0.0) {
-			continue;
-		}
-		const uint32_t pre_emit_op_index =
-			(final_meas_op == 0) ? op_to_emit_op_index_[0]
-								 : op_to_emit_op_index_[static_cast<uint32_t>(final_meas_op - 1)];
-		buckets[pre_emit_op_index].push_back(
-			{pre_emit_op_index, qubit, p_meas_x, 0.0, 0.0});
+		add_tail_hidden_injections(
+			check_results,
+			qubit,
+			start_op,
+			static_cast<uint32_t>(final_meas_op),
+			&buckets,
+			skippable_reweights);
 	}
 
 	return buckets;

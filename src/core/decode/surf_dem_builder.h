@@ -46,6 +46,16 @@ class SurfDemBuilder {
 	private:
 	const circuit::CompiledErasureProgram& program_;
 
+	// Propagates hidden-erasure mass over the end-of-circuit tail window and
+	// emits any resulting spread, reweight, and measurement-randomization terms.
+	void add_tail_hidden_injections(
+		const std::vector<uint8_t>* check_results,
+		uint32_t qubit,
+		uint32_t start_op,
+		uint32_t final_meas_op,
+		SpreadInjectionBuckets* buckets,
+		SkippableReweightMap* skippable_reweights) const;
+
 	// Global check-event order lookups.
 	std::vector<uint32_t> check_event_to_qubit_;
 	std::vector<uint32_t> check_event_to_op_index_;

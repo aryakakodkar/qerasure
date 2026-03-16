@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Find a grouped decode failure and save the failing circuits as artifacts."""
+"""Regression test for the former mp=3 hidden-tail decode failure."""
 
 from __future__ import annotations
 
@@ -178,87 +178,75 @@ def _save_artifacts(
 def main() -> int:
     repo_root, qe = _import_qerasure()
 
-    # Focus the search on the regime requested by the user.
-    search_points = [
-        {"distance": 3, "rounds": 3, "erasure_prob": 0.00172034, "single_qubit_errors": True},
-        {"distance": 3, "rounds": 3, "erasure_prob": 0.00245508, "single_qubit_errors": True},
-        {"distance": 3, "rounds": 3, "erasure_prob": 0.00350363, "single_qubit_errors": True},
-        {"distance": 3, "rounds": 3, "erasure_prob": 0.005, "single_qubit_errors": True},
-    ]
+    point = {
+        "distance": 3,
+        "rounds": 3,
+        "erasure_prob": 0.00172034,
+        "single_qubit_errors": True,
+    }
     shots = 20000
-    max_seed_tries = 48
-    seed_base = 920000
+    seed = 920004
     max_persistence = 3
     check_error_prob = 0.02
 
     artifact_dir = repo_root / "tests" / "artifacts" / "surface_batch_decode_failure"
-
-    for point_idx, point in enumerate(search_points):
-        erasure_circuit, _program, sampler, dem_builder, grouped_decoder = _build_components(
-            qe,
-            distance=int(point["distance"]),
-            rounds=int(point["rounds"]),
-            erasure_prob=float(point["erasure_prob"]),
-            single_qubit_errors=bool(point["single_qubit_errors"]),
-            max_persistence=max_persistence,
-            check_error_prob=check_error_prob,
-        )
-
-        for seed_offset in range(max_seed_tries):
-            seed = seed_base + point_idx * 1000 + seed_offset
-            dets, _obs, checks = sampler.sample(num_shots=shots, seed=seed, num_threads=1)
-            failure = _find_failure(dem_builder, grouped_decoder, dets, checks)
-            if failure is None:
-                continue
-
-            logical_circuit_text = _replay_logical_circuit(
-                sampler,
-                seed=seed,
-                failing_shot=int(failure["failing_shot"]),
-                expected_check_row=checks[int(failure["failing_shot"])],
-            )
-            logical_circuit_text, replayed_check_row = logical_circuit_text
-
-            metadata = {
-                "distance": int(point["distance"]),
-                "rounds": int(point["rounds"]),
-                "erasure_prob": float(point["erasure_prob"]),
-                "single_qubit_errors": bool(point["single_qubit_errors"]),
-                "max_persistence": max_persistence,
-                "check_error_prob": check_error_prob,
-                "shots": shots,
-                "seed": seed,
-                "stage": failure["stage"],
-                "batch_error": failure["batch_error"],
-                "error": failure["error"],
-                "failing_shot": int(failure["failing_shot"]),
-                "shot_indices": [int(v) for v in failure["shot_indices"]],
-                "check_row": [int(v) for v in np.asarray(failure["check_row"], dtype=np.uint8)],
-                "replayed_check_row": [int(v) for v in np.asarray(replayed_check_row, dtype=np.uint8)],
-            }
-            _save_artifacts(
-                artifact_dir,
-                erasure_circuit_text=erasure_circuit.to_string(),
-                logical_circuit_text=logical_circuit_text,
-                decoded_circuit_text=failure["decoded_circuit_text"],
-                metadata=metadata,
-            )
-
-            print("python_surface_batch_decode_failure_artifact_test")
-            print(f"saved: {artifact_dir / 'erasure_circuit.qer'}")
-            print(f"saved: {artifact_dir / 'logical_circuit.stim'}")
-            if failure["decoded_circuit_text"] is not None:
-                print(f"saved: {artifact_dir / 'virtual_circuit.stim'}")
-            print(f"saved: {artifact_dir / 'metadata.json'}")
-            print(f"seed: {seed}")
-            print(f"stage: {failure['stage']}")
-            print(f"error: {failure['error']}")
-            return 0
-
-    raise RuntimeError(
-        "Failed to trigger a grouped decode error in the surface-batch search window. "
-        "Increase shots, seed range, or search points."
+    erasure_circuit, _program, sampler, dem_builder, grouped_decoder = _build_components(
+        qe,
+        distance=int(point["distance"]),
+        rounds=int(point["rounds"]),
+        erasure_prob=float(point["erasure_prob"]),
+        single_qubit_errors=bool(point["single_qubit_errors"]),
+        max_persistence=max_persistence,
+        check_error_prob=check_error_prob,
     )
+
+    dets, _obs, checks = sampler.sample(num_shots=shots, seed=seed, num_threads=1)
+    try:
+        grouped_decoder.decode_batch(dets, checks, num_threads=1)
+    except Exception:
+        failure = _find_failure(dem_builder, grouped_decoder, dets, checks)
+        if failure is None:
+            raise RuntimeError("decode_batch failed, but no failing grouped pattern was found.")
+
+        logical_circuit_text, replayed_check_row = _replay_logical_circuit(
+            sampler,
+            seed=seed,
+            failing_shot=int(failure["failing_shot"]),
+            expected_check_row=checks[int(failure["failing_shot"])],
+        )
+        metadata = {
+            "distance": int(point["distance"]),
+            "rounds": int(point["rounds"]),
+            "erasure_prob": float(point["erasure_prob"]),
+            "single_qubit_errors": bool(point["single_qubit_errors"]),
+            "max_persistence": max_persistence,
+            "check_error_prob": check_error_prob,
+            "shots": shots,
+            "seed": seed,
+            "stage": failure["stage"],
+            "batch_error": failure["batch_error"],
+            "error": failure["error"],
+            "failing_shot": int(failure["failing_shot"]),
+            "shot_indices": [int(v) for v in failure["shot_indices"]],
+            "check_row": [int(v) for v in np.asarray(failure["check_row"], dtype=np.uint8)],
+            "replayed_check_row": [int(v) for v in np.asarray(replayed_check_row, dtype=np.uint8)],
+        }
+        _save_artifacts(
+            artifact_dir,
+            erasure_circuit_text=erasure_circuit.to_string(),
+            logical_circuit_text=logical_circuit_text,
+            decoded_circuit_text=failure["decoded_circuit_text"],
+            metadata=metadata,
+        )
+        raise RuntimeError(
+            "Former hidden-tail decode failure regressed; artifacts were saved to "
+            f"{artifact_dir}"
+        ) from None
+
+    print("python_surface_batch_decode_failure_artifact_test")
+    print("status: former mp=3 hidden-tail decode failure no longer reproduces")
+    print(f"seed: {seed}")
+    return 0
 
 
 if __name__ == "__main__":
