@@ -228,6 +228,7 @@ def run_single_point(
     erasure_prob: float,
     check_prob: float,
     pauli_prob: float,
+    max_persistence: int,
     seed: int,
     max_batch_bytes: int,
     single_qubit_errors: bool,
@@ -242,7 +243,7 @@ def run_single_point(
     )
 
     model = qe.ErasureModel(
-        2,
+        int(max_persistence),
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.TQGSpreadModel(
@@ -326,6 +327,7 @@ def run_single_point_job(job: dict) -> tuple[dict, dict]:
         erasure_prob=float(job["e_erasure"]),
         check_prob=float(job["q_check"]),
         pauli_prob=float(job["p_pauli"]),
+        max_persistence=int(job["max_persistence"]),
         seed=int(job["seed"]),
         max_batch_bytes=int(job["max_batch_bytes"]),
         single_qubit_errors=bool(job["single_qubit_errors"]),
@@ -453,6 +455,12 @@ def main() -> None:
     )
     parser.add_argument("--num-threads", type=int, default=1)
     parser.add_argument(
+        "--max-persistence",
+        type=int,
+        default=2,
+        help="Max persistence for the erasure model.",
+    )
+    parser.add_argument(
         "--sweep-threads",
         type=int,
         default=1,
@@ -504,6 +512,8 @@ def main() -> None:
         raise ValueError("All q-values must be in [0, 1].")
     if any(p < 0.0 or p > 1.0 for p in p_values):
         raise ValueError("All p-values must be in [0, 1].")
+    if args.max_persistence <= 0:
+        raise ValueError("--max-persistence must be positive.")
 
     if args.sweep_threads <= 0:
         raise ValueError("--sweep-threads must be positive.")
@@ -557,6 +567,7 @@ def main() -> None:
                                 "e_erasure": float(e_erasure),
                                 "q_check": float(q_check),
                                 "p_pauli": float(p_pauli),
+                                "max_persistence": int(args.max_persistence),
                                 "shots": int(args.shots),
                                 "seed": int(seed),
                                 "max_batch_bytes": int(args.max_batch_bytes),
@@ -620,6 +631,7 @@ def main() -> None:
             pair_payload = {
                 "configs": [{"distance": d, "qec_rounds": r} for d, r in configs],
                 "shots_per_point": args.shots,
+                "max_persistence": int(args.max_persistence),
                 "p_pauli": float(p_pauli),
                 "q_check": float(q_check),
                 "e_values": [float(e) for e in e_values],
@@ -647,6 +659,7 @@ def main() -> None:
             summary_payload = {
                 "configs": [{"distance": d, "qec_rounds": r} for d, r in configs],
                 "shots_per_point": args.shots,
+                "max_persistence": int(args.max_persistence),
                 "e_values": [float(e) for e in e_values],
                 "q_values": [float(q) for q in q_values],
                 "p_values": [float(p) for p in p_values],
