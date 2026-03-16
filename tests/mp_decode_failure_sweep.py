@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -81,6 +82,7 @@ def main() -> int:
     parser.add_argument("--shots", type=int, default=100_000)
     parser.add_argument("--seed", type=int, default=920004)
     parser.add_argument("--erasure-prob", type=float, default=0.00172034)
+    parser.add_argument("--decode-threads", type=int, default=max(1, os.cpu_count() or 1))
     parser.add_argument(
         "--single-qubit-errors",
         action=argparse.BooleanOptionalAction,
@@ -117,7 +119,7 @@ def main() -> int:
             decode_failed = False
             error_text = ""
             try:
-                decoder.decode_batch(dets, checks, num_threads=1)
+                decoder.decode_batch(dets, checks, num_threads=int(args.decode_threads))
             except Exception as exc:  # pylint: disable=broad-except
                 decode_failed = True
                 error_text = f"{type(exc).__name__}: {exc}"
@@ -139,7 +141,8 @@ def main() -> int:
             status = "FAIL" if decode_failed else "OK"
             print(
                 f"q={q_check_error} p={p_pauli_error} mp={max_persistence} status={status} "
-                f"distance={args.distance} rounds={args.rounds} shots={args.shots}"
+                f"distance={args.distance} rounds={args.rounds} shots={args.shots} "
+                f"decode_threads={args.decode_threads}"
             )
             if error_text:
                 print(f"  error={error_text}")
