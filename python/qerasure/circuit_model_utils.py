@@ -909,6 +909,7 @@ def build_surface_code_erasure_circuit(
     ecr_after_each_step: bool = False,
     single_qubit_errors: bool = False,
     post_clifford_pauli_prob: float = 0.0,
+    rounds_per_check: int = 1,
 ) -> ErasureCircuit:
     """Build a rotated-surface-code erasure circuit using the C++ generator."""
     generator = SurfaceCodeRotated(int(distance))
@@ -920,6 +921,7 @@ def build_surface_code_erasure_circuit(
         bool(ecr_after_each_step),
         bool(single_qubit_errors),
         float(post_clifford_pauli_prob),
+        int(rounds_per_check),
     )
     wrapped = ErasureCircuit()
     wrapped._cpp_circuit = cpp_circuit

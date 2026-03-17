@@ -96,6 +96,7 @@ if(BUILD_TESTING)
       tests/skippable_reweight_test.cpp
       tests/surf_dem_builder_trace_test.cpp
       tests/surf_tail_correction_test.cpp
+      tests/surf_rounds_per_check_test.cpp
       tests/surf_post_clifford_pauli_test.cpp
       tests/stream_decode_dem_test.cpp
       tests/observable_flip_artifact_test.cpp
