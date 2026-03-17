@@ -68,6 +68,7 @@ RailSurfaceCompiledProgram::RailSurfaceCompiledProgram(
   data_round_z_interaction_op_.assign(
       static_cast<size_t>(num_data_qubits_) * rounds_ * num_z_ancillas_, -1);
   data_to_z_slots_.reserve(num_data_qubits_);
+  data_schedule_type_.assign(num_data_qubits_, 0);
 
   for (uint32_t q = 0; q < num_data_qubits_; ++q) {
     const auto& slots = code_.data_to_z_ancilla_slots().at(q);
@@ -96,6 +97,14 @@ RailSurfaceCompiledProgram::RailSurfaceCompiledProgram(
       for (size_t k = 0; k + 1 < instr.targets.size(); k += 2) {
         const uint32_t control = instr.targets[k];
         const uint32_t target = instr.targets[k + 1];
+        if (current_round == 0 && target < num_data_qubits_ && control >= x_anc_offset_ &&
+            control < z_anc_offset_ && data_schedule_type_[target] == 0) {
+          data_schedule_type_[target] = 1;
+        }
+        if (current_round == 0 && control < num_data_qubits_ && target >= z_anc_offset_ &&
+            data_schedule_type_[control] == 0) {
+          data_schedule_type_[control] = 2;
+        }
         if (control >= num_data_qubits_) {
           continue;
         }
@@ -136,6 +145,23 @@ RailSurfaceCompiledProgram::RailSurfaceCompiledProgram(
   if (check_event_to_qubit_.size() != base_program_.num_checks()) {
     throw std::logic_error("RailSurfaceCompiledProgram check-event mapping mismatch");
   }
+}
+
+int32_t RailSurfaceCompiledProgram::data_qubit_schedule_type(uint32_t data_qubit) const {
+  if (data_qubit >= data_schedule_type_.size()) {
+    return 0;
+  }
+  return static_cast<int32_t>(data_schedule_type_[data_qubit]);
+}
+
+bool RailSurfaceCompiledProgram::data_qubit_is_boundary(uint32_t data_qubit) const {
+  if (data_qubit >= data_to_z_slots_.size()) {
+    return false;
+  }
+  const auto slots = data_to_z_slots_[data_qubit];
+  const bool has0 = slots.first >= 0;
+  const bool has1 = slots.second >= 0;
+  return has0 != has1;
 }
 
 std::pair<int32_t, int32_t> RailSurfaceCompiledProgram::data_z_ancilla_slots(

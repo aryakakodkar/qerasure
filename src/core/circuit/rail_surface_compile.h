@@ -50,6 +50,10 @@ class RailSurfaceCompiledProgram {
     return num_detectors_;
   }
 
+  int32_t data_qubit_schedule_type(uint32_t data_qubit) const;
+
+  bool data_qubit_is_boundary(uint32_t data_qubit) const;
+
   bool is_data_qubit(uint32_t qubit) const {
     return qubit < num_data_qubits_;
   }
@@ -102,6 +106,8 @@ class RailSurfaceCompiledProgram {
   std::vector<int32_t> round_z_detector_index_;
   // Flattened [data_qubit] -> (slot0, slot1) absolute ancilla indices or -1.
   std::vector<std::pair<int32_t, int32_t>> data_to_z_slots_;
+  // Flattened [data_qubit] -> 0 unknown, 1 X-first (XZZX), 2 Z-first (ZXXZ).
+  std::vector<uint8_t> data_schedule_type_;
 };
 
 }  // namespace qerasure::circuit

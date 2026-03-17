@@ -103,6 +103,8 @@ int main() {
   }
 
   RailSurfaceDemBuilder rail_builder(rail_program);
+  const auto calibration_rows = rail_builder.calibration_rows(&check_results, &detector_samples);
+  expect(!calibration_rows.empty(), "expected non-empty calibration rows for flagged data check");
   auto buckets = rail_builder.compute_spread_injections_with_evidence(
       &check_results, &detector_samples, /*verbose=*/false, /*skippable_reweights=*/nullptr);
 

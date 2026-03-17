@@ -12,6 +12,19 @@ namespace qerasure::decode {
 
 class RailSurfaceDemBuilder {
  public:
+  struct CalibrationRow {
+    uint32_t check_event_index;
+    uint32_t data_qubit;
+    uint32_t check_op_index;
+    uint32_t check_round;
+    uint32_t onset_op_index;
+    double prior_mass;
+    double evidence_likelihood;
+    double posterior_mass;
+    int32_t schedule_type;
+    bool boundary_data_qubit;
+  };
+
   explicit RailSurfaceDemBuilder(const circuit::RailSurfaceCompiledProgram& program);
 
   SpreadInjectionBuckets compute_spread_injections_with_evidence(
@@ -29,6 +42,10 @@ class RailSurfaceDemBuilder {
       const std::vector<uint8_t>* check_results,
       const std::vector<uint8_t>* detector_samples,
       bool verbose = false) const;
+
+  std::vector<CalibrationRow> calibration_rows(
+      const std::vector<uint8_t>* check_results,
+      const std::vector<uint8_t>* detector_samples) const;
 
  private:
   struct RailChoiceWeight {

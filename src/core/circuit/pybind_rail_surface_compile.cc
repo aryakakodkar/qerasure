@@ -33,6 +33,14 @@ void bind_rail_surface_compile(py::module_& m) {
           "check_event_to_op_index",
           &circuit::RailSurfaceCompiledProgram::check_event_to_op_index)
       .def("is_data_qubit", &circuit::RailSurfaceCompiledProgram::is_data_qubit, py::arg("qubit"))
+      .def(
+          "data_qubit_schedule_type",
+          &circuit::RailSurfaceCompiledProgram::data_qubit_schedule_type,
+          py::arg("data_qubit"))
+      .def(
+          "data_qubit_is_boundary",
+          &circuit::RailSurfaceCompiledProgram::data_qubit_is_boundary,
+          py::arg("data_qubit"))
       .def("op_round", &circuit::RailSurfaceCompiledProgram::op_round, py::arg("op_index"))
       .def(
           "data_z_ancilla_slots",

@@ -69,6 +69,7 @@ These are additive and do not replace existing `CompiledErasureProgram`, `Stream
   - `RailStreamSampler`
   - `RailSurfaceDemBuilder`
   - `compile_rail_surface_sampler(...)`
+  - `RailSurfaceDemBuilder.calibration_rows(...)`
 - `python/qerasure/__init__.py`
   - exports for the new rail classes/helpers.
 
@@ -82,6 +83,17 @@ These are additive and do not replace existing `CompiledErasureProgram`, `Stream
 - `tests/rail_surface_path_test.cpp`
   - Verifies rail sampler path runs and output dimensions are consistent.
   - Verifies detector-conditioned rail posterior biases X-injection mass toward evidence-consistent Z ancilla.
+  - Verifies rail calibration rows are emitted for flagged data checks.
+
+## Calibration Stats Tooling
+- Added `apps/rail_calibration_stats.py` to run rail-path calibration sweeps and save:
+  - PNG plot of conditional onset probabilities vs onset-op offset.
+  - JSON payload with per-qubit-type summary bins and sample counts.
+- Default run uses:
+  - surface-only rail path,
+  - `max_persistence=2`,
+  - perfect checks (`p_fn = p_fp = 0`),
+  - "erasure-only" model channels (`onset/reset/spread` Pauli channels set to zero).
 
 ## Validation Performed
 - Build:

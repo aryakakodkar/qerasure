@@ -620,6 +620,15 @@ class RailSurfaceDemBuilder:
         detectors = [int(v) for v in detector_samples]
         return str(self._cpp_builder.build_decoded_circuit_text(checks, detectors, bool(verbose)))
 
+    def calibration_rows(
+        self,
+        check_results: Sequence[int],
+        detector_samples: Sequence[int],
+    ):
+        checks = [int(v) for v in check_results]
+        detectors = [int(v) for v in detector_samples]
+        return self._cpp_builder.calibration_rows(checks, detectors)
+
 
 class SurfaceCodeBatchDecoder:
     """Grouped batch decoder using one decoded DEM per unique check-flag pattern."""
