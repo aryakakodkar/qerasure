@@ -51,6 +51,21 @@ def has_pair_inconsistency(
     return False
 
 
+def event_matches_condition(
+    condition: str,
+    rail_program: qe.RailSurfaceCompiledProgram,
+    det_row: np.ndarray,
+    data_qubit: int,
+    check_round: int,
+) -> bool:
+    inconsistent = has_pair_inconsistency(rail_program, det_row, data_qubit, check_round)
+    if condition == "inconsistency":
+        return inconsistent
+    if condition == "no_inconsistency":
+        return not inconsistent
+    raise ValueError(f"Unsupported condition '{condition}'")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -65,16 +80,28 @@ def main() -> None:
     parser.add_argument("--erasure-prob", type=float, default=0.02)
     parser.add_argument("--rounds-per-check", type=int, default=2)
     parser.add_argument(
+        "--condition",
+        choices=["inconsistency", "no_inconsistency"],
+        default="inconsistency",
+        help="Conditioning event for flagged data checks.",
+    )
+    parser.add_argument(
         "--png-out",
         type=Path,
-        default=REPO_ROOT / "apps" / "results" / "rail_inconsistency_posterior_bars.png",
+        default=None,
     )
     parser.add_argument(
         "--json-out",
         type=Path,
-        default=REPO_ROOT / "apps" / "results" / "rail_inconsistency_posterior_bars.json",
+        default=None,
     )
     args = parser.parse_args()
+    if args.png_out is None:
+        suffix = "inconsistency" if args.condition == "inconsistency" else "no_inconsistency"
+        args.png_out = REPO_ROOT / "apps" / "results" / f"rail_{suffix}_posterior_bars.png"
+    if args.json_out is None:
+        suffix = "inconsistency" if args.condition == "inconsistency" else "no_inconsistency"
+        args.json_out = REPO_ROOT / "apps" / "results" / f"rail_{suffix}_posterior_bars.json"
 
     circuit = qe.build_surface_code_erasure_circuit(
         distance=args.distance,
@@ -138,7 +165,9 @@ def main() -> None:
             _, data_qubit, check_round, schedule_type, is_boundary = key
             if is_boundary:
                 continue
-            if not has_pair_inconsistency(rail_program, det_row, data_qubit, check_round):
+            if not event_matches_condition(
+                args.condition, rail_program, det_row, data_qubit, check_round
+            ):
                 continue
 
             # Sort onset candidates by operation index to define 8 spot positions.
@@ -184,10 +213,11 @@ def main() -> None:
             "labels": labels,
         }
 
-    axes[0].set_ylabel("P(onset spot | flagged check + inconsistency)")
+    axes[0].set_ylabel(f"P(onset spot | flagged check + {args.condition})")
     fig.suptitle(
         f"9-way Rail Calibration Posterior (d={args.distance}, rounds={args.rounds}, "
-        f"shots={args.shots}, p_e={args.erasure_prob}, perfect checks, mp=2)"
+        f"shots={args.shots}, p_e={args.erasure_prob}, perfect checks, mp=2, "
+        f"condition={args.condition})"
     )
     fig.tight_layout()
 
@@ -205,6 +235,7 @@ def main() -> None:
         "rounds_per_check": args.rounds_per_check,
         "perfect_checks": True,
         "single_qubit_errors": False,
+        "condition": args.condition,
         "hypothesis_count": 9,
         "hypotheses": labels,
         "summary": summary,
