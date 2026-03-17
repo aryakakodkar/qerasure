@@ -42,13 +42,14 @@ bool is_data_qubit(std::size_t q, std::size_t x_anc_offset) {
 }
 
 void append_round_detectors(circuit::ErasureCircuit* circuit, std::size_t num_x_anc,
-                            std::size_t num_z_anc, std::size_t num_anc, std::size_t round) {
+                            std::size_t num_z_anc, std::size_t num_anc,
+                            bool has_previous_check) {
   for (std::size_t zi = 0; zi < num_z_anc; ++zi) {
     const std::size_t ancilla_position = num_x_anc + zi;
     const uint32_t current_lookback = static_cast<uint32_t>(num_anc - ancilla_position);
     std::vector<uint32_t> rec_lookbacks;
     rec_lookbacks.push_back(current_lookback);
-    if (round > 0) {
+    if (has_previous_check) {
       const uint32_t previous_lookback = static_cast<uint32_t>(2 * num_anc - ancilla_position);
       rec_lookbacks.push_back(previous_lookback);
     }
@@ -65,9 +66,13 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
                                                           double reset_failure_prob,
                                                           bool ecr_after_each_step,
                                                           bool single_qubit_errors,
-                                                          double post_clifford_pauli_prob) {
+                                                          double post_clifford_pauli_prob,
+                                                          uint32_t rounds_per_check) {
   if (rounds == 0) {
     throw std::invalid_argument("rounds must be > 0");
+  }
+  if (rounds_per_check == 0) {
+    throw std::invalid_argument("rounds_per_check must be > 0");
   }
   if (erasure_prob < 0.0 || erasure_prob > 1.0) {
     throw std::invalid_argument("erasure_prob must be in [0, 1]");
@@ -168,8 +173,13 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
       circuit.append(circuit::OpCode::X_ERROR, targets, post_clifford_pauli_prob);
     }
   };
+  bool has_previous_round_check = false;
 
   for (std::size_t round = 0; round < rounds; ++round) {
+    const bool is_last_round = round + 1 == rounds;
+    const bool should_check_this_round =
+        is_last_round || ((round + 1) % rounds_per_check == 0);
+
     circuit.append(circuit::OpCode::H, x_ancillas);
     if (single_qubit_errors && !x_ancillas.empty()) {
       circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
@@ -241,13 +251,14 @@ circuit::ErasureCircuit SurfaceCodeRotated::build_circuit(uint32_t rounds, doubl
       circuit.append(circuit::OpCode::ERASE, x_ancillas, erasure_prob);
     }
     append_post_clifford_pauli(x_ancillas);
-    if (!ecr_after_each_step) {
+    if (!ecr_after_each_step && should_check_this_round) {
       circuit.append(circuit::OpCode::ECR, erasable_targets, reset_failure_prob);
       append_post_clifford_pauli(erasable_targets);
     }
     append_pre_measurement_x(all_ancillas);
     circuit.append(circuit::OpCode::MR, all_ancillas);
-    append_round_detectors(&circuit, num_x_anc, num_z_anc, num_anc, round);
+    append_round_detectors(&circuit, num_x_anc, num_z_anc, num_anc, has_previous_round_check);
+    has_previous_round_check = true;
   }
 
   append_pre_measurement_x(data_qubits);

@@ -90,7 +90,7 @@ def run_single_point(
     max_batch_bytes: int,
     single_qubit_errors: bool,
     post_clifford_pauli_prob: float,
-    check_prob: float = 0.005,
+    check_prob: float,
 ) -> dict:
     circuit = qe.SurfaceCodeRotated(distance).build_circuit(
         rounds=rounds,
@@ -99,6 +99,7 @@ def run_single_point(
         reset_failure_prob=0.0,
         single_qubit_errors=single_qubit_errors,
         post_clifford_pauli_prob=post_clifford_pauli_prob,
+        rounds_per_check=1
     )
 
     model = qe.ErasureModel(
@@ -106,8 +107,8 @@ def run_single_point(
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.PauliChannel(0.25, 0.25, 0.25),
         qe.TQGSpreadModel(
-            qe.PauliChannel(0.25, 0.25, 0.25),
-            qe.PauliChannel(0.25, 0.25, 0.25),
+            qe.PauliChannel(0.5, 0.0, 0.0),
+            qe.PauliChannel(0.0, 0.0, 0.5),
         ),
     )
     model.check_false_negative_prob = check_prob
@@ -202,6 +203,12 @@ def main() -> None:
         help="Probability for injected post-clifford/pre-measurement Pauli channels.",
     )
     parser.add_argument(
+        "--check-prob",
+        type=float,
+        default=0,
+        help="Erasure-check false-negative/false-positive probability.",
+    )
+    parser.add_argument(
         "--json-out",
         type=Path,
         default=REPO_ROOT / "apps" / "results" / "surface_batch_ler_sweep.json",
@@ -217,6 +224,8 @@ def main() -> None:
     p_values = make_p_values(args.p_values, args.p_min, args.p_max, args.points)
     if args.post_clifford_pauli_prob < 0.0 or args.post_clifford_pauli_prob > 1.0:
         raise ValueError("--post-clifford-pauli-prob must be in [0, 1].")
+    if args.check_prob < 0.0 or args.check_prob > 1.0:
+        raise ValueError("--check-prob must be in [0, 1].")
     if args.num_threads <= 0:
         raise ValueError("--num-threads must be positive.")
 
@@ -237,7 +246,7 @@ def main() -> None:
                     "max_batch_bytes": args.max_batch_bytes,
                     "single_qubit_errors": bool(args.single_qubit_errors),
                     "post_clifford_pauli_prob": float(args.post_clifford_pauli_prob),
-                    "check_prob": 0.005,
+                    "check_prob": float(args.check_prob),
                 }
             )
             task_index += 1
@@ -286,6 +295,7 @@ def main() -> None:
         "p_values": [float(p) for p in p_values],
         "single_qubit_errors": bool(args.single_qubit_errors),
         "post_clifford_pauli_prob": float(args.post_clifford_pauli_prob),
+        "check_prob": float(args.check_prob),
         "elapsed_seconds": elapsed,
         "rows": rows,
     }
