@@ -164,6 +164,19 @@ bool RailSurfaceCompiledProgram::data_qubit_is_boundary(uint32_t data_qubit) con
   return has0 != has1;
 }
 
+bool RailSurfaceCompiledProgram::data_qubit_is_full_interior(uint32_t data_qubit) const {
+  if (data_qubit >= num_data_qubits_) {
+    return false;
+  }
+  const auto& x_slots = code_.data_to_x_ancilla_slots().at(data_qubit);
+  const auto& z_slots = code_.data_to_z_ancilla_slots().at(data_qubit);
+  const bool has_x0 = x_slots.first != kNoPartner;
+  const bool has_x1 = x_slots.second != kNoPartner;
+  const bool has_z0 = z_slots.first != kNoPartner;
+  const bool has_z1 = z_slots.second != kNoPartner;
+  return has_x0 && has_x1 && has_z0 && has_z1;
+}
+
 std::pair<int32_t, int32_t> RailSurfaceCompiledProgram::data_z_ancilla_slots(
     uint32_t data_qubit) const {
   if (data_qubit >= data_to_z_slots_.size()) {

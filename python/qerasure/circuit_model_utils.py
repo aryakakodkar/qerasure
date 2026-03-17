@@ -412,6 +412,10 @@ class RailSurfaceCompiledProgram:
         return int(self._cpp_program.num_detectors)
 
     @property
+    def num_data_qubits(self) -> int:
+        return int(self._cpp_program.num_data_qubits)
+
+    @property
     def check_event_to_qubit(self):
         return self._cpp_program.check_event_to_qubit
 
@@ -433,6 +437,9 @@ class RailSurfaceCompiledProgram:
 
     def data_qubit_is_boundary(self, data_qubit: int) -> bool:
         return bool(self._cpp_program.data_qubit_is_boundary(int(data_qubit)))
+
+    def data_qubit_is_full_interior(self, data_qubit: int) -> bool:
+        return bool(self._cpp_program.data_qubit_is_full_interior(int(data_qubit)))
 
     def _to_cpp_program(self):
         return self._cpp_program

@@ -54,6 +54,9 @@ class RailSurfaceCompiledProgram {
 
   bool data_qubit_is_boundary(uint32_t data_qubit) const;
 
+  // True only when a data qubit has two X-ancilla and two Z-ancilla partners.
+  bool data_qubit_is_full_interior(uint32_t data_qubit) const;
+
   bool is_data_qubit(uint32_t qubit) const {
     return qubit < num_data_qubits_;
   }

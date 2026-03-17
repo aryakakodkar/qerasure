@@ -87,6 +87,7 @@ class RailSurfaceDemBuilder {
   const circuit::CompiledErasureProgram& program_;
   SurfDemBuilder base_builder_;
   std::vector<uint32_t> op_to_emit_op_index_;
+  double evidence_mismatch_floor_;
 };
 
 }  // namespace qerasure::decode

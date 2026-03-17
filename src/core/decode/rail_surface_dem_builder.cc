@@ -50,6 +50,27 @@ uint32_t find_end_qubit_op_offset(
   return static_cast<uint32_t>(it - qubit_ops.begin());
 }
 
+// Returns the other qubit in an ERASE2_ANY onset pair touching `data_qubit`
+// at `onset_op_index`, or -1 when no such onset-pair branch exists.
+int32_t find_onset_pair_partner_qubit(
+    const circuit::CompiledErasureProgram& program,
+    uint32_t data_qubit,
+    uint32_t onset_op_index) {
+  if (onset_op_index >= program.operation_groups.size()) {
+    return -1;
+  }
+  const circuit::OperationGroup& op_group = program.operation_groups[onset_op_index];
+  for (const auto& onset_pair : op_group.onset_pairs) {
+    if (onset_pair.qubit_index1 == data_qubit) {
+      return static_cast<int32_t>(onset_pair.qubit_index2);
+    }
+    if (onset_pair.qubit_index2 == data_qubit) {
+      return static_cast<int32_t>(onset_pair.qubit_index1);
+    }
+  }
+  return -1;
+}
+
 }  // namespace
 
 RailSurfaceDemBuilder::RailSurfaceDemBuilder(
@@ -57,7 +78,24 @@ RailSurfaceDemBuilder::RailSurfaceDemBuilder(
     : rail_program_(program),
       program_(program.base_program()),
       base_builder_(program.base_program()),
-      op_to_emit_op_index_(program_.operation_groups.size(), 0) {
+      op_to_emit_op_index_(program_.operation_groups.size(), 0),
+      evidence_mismatch_floor_(1e-12) {
+  double onset_probability_scale = 0.0;
+  for (const circuit::OperationGroup& group : program_.operation_groups) {
+    for (const auto& onset : group.onsets) {
+      onset_probability_scale = std::max(onset_probability_scale, onset.probability);
+    }
+    for (const auto& onset_pair : group.onset_pairs) {
+      onset_probability_scale = std::max(onset_probability_scale, onset_pair.probability);
+    }
+  }
+  if (onset_probability_scale <= 0.0) {
+    onset_probability_scale = 1e-6;
+  }
+  // Keep impossible branches at second-order scale instead of hard-zero.
+  evidence_mismatch_floor_ = std::clamp(
+      onset_probability_scale * onset_probability_scale, 1e-12, 0.25);
+
   uint32_t last_emit = 0;
   for (uint32_t op_index = 0; op_index < program_.operation_groups.size(); ++op_index) {
     if (program_.operation_groups[op_index].stim_instruction.has_value()) {
@@ -86,7 +124,17 @@ RailSurfaceDemBuilder::BranchEvidence RailSurfaceDemBuilder::compute_branch_evid
   }
 
   const uint32_t start_round = check_round == 0 ? 0 : (check_round - 1);
-  constexpr double kEpsilon = 0.05;
+  const int32_t onset_round = rail_program_.op_round(onset_op_index);
+  const int32_t onset_partner = find_onset_pair_partner_qubit(
+      program_, data_qubit, onset_op_index);
+  const bool onset_partner_is_z =
+      onset_partner >= static_cast<int32_t>(rail_program_.z_anc_offset());
+  const double onset_flip_probability =
+      std::clamp(
+          program_.model().onset.p_x + program_.model().onset.p_y,
+          0.0,
+          1.0);
+
   std::vector<double> weighted_likelihoods(hypotheses.size(), 0.0);
   double total = 0.0;
   for (size_t i = 0; i < hypotheses.size(); ++i) {
@@ -109,10 +157,24 @@ RailSurfaceDemBuilder::BranchEvidence RailSurfaceDemBuilder::compute_branch_evid
             interaction_op >= 0 && onset_op_index < static_cast<uint32_t>(interaction_op);
         const bool predicted_flag =
             selected_z_ancilla == z_ancilla && active_before_interaction;
+        double predicted_flag_probability = predicted_flag ? 1.0 : 0.0;
+        // If onset happened via ERASE2_ANY against this Z ancilla, include the
+        // onset-channel bit-flip contribution at the onset round.
+        if (onset_partner_is_z &&
+            onset_round >= 0 &&
+            round == static_cast<uint32_t>(onset_round) &&
+            z_ancilla == onset_partner) {
+          predicted_flag_probability =
+              predicted_flag ? (1.0 - onset_flip_probability) : onset_flip_probability;
+        }
         const uint8_t observed = (*detector_samples)[det_index];
-        const double p_obs = predicted_flag
-            ? (observed ? (1.0 - kEpsilon) : kEpsilon)
-            : (observed ? kEpsilon : (1.0 - kEpsilon));
+        const double p_obs_if_flag =
+            observed ? (1.0 - evidence_mismatch_floor_) : evidence_mismatch_floor_;
+        const double p_obs_if_no_flag =
+            observed ? evidence_mismatch_floor_ : (1.0 - evidence_mismatch_floor_);
+        const double p_obs =
+            predicted_flag_probability * p_obs_if_flag +
+            (1.0 - predicted_flag_probability) * p_obs_if_no_flag;
         likelihood *= p_obs;
       }
     }
@@ -142,7 +204,6 @@ double RailSurfaceDemBuilder::compute_no_erasure_evidence(
     const std::vector<uint8_t>* detector_samples) const {
   const auto slots = rail_program_.data_z_ancilla_slots(data_qubit);
   const uint32_t start_round = check_round == 0 ? 0 : (check_round - 1);
-  constexpr double kEpsilon = 0.05;
   double likelihood = 1.0;
   for (uint32_t round = start_round; round <= check_round; ++round) {
     for (const int32_t z_ancilla : {slots.first, slots.second}) {
@@ -156,7 +217,7 @@ double RailSurfaceDemBuilder::compute_no_erasure_evidence(
         continue;
       }
       const uint8_t observed = (*detector_samples)[det_index];
-      likelihood *= observed ? kEpsilon : (1.0 - kEpsilon);
+      likelihood *= observed ? evidence_mismatch_floor_ : (1.0 - evidence_mismatch_floor_);
     }
   }
   return likelihood;
