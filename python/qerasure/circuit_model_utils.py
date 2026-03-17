@@ -16,6 +16,9 @@ PauliChannel = cpp.PauliChannel
 TQGSpreadModel = cpp.TQGSpreadModel
 SurfaceCodeRotated = cpp.SurfaceCodeRotated
 _CppErasureModel = cpp.ErasureModel
+_CppRailSurfaceCompiledProgram = cpp.RailSurfaceCompiledProgram
+_CppRailStreamSampler = cpp.RailStreamSampler
+_CppRailSurfaceDemBuilder = cpp.RailSurfaceDemBuilder
 _UINT32_MAX = (1 << 32) - 1
 _STIM_TEXT_FALLBACK_WARNED = False
 
@@ -377,6 +380,41 @@ class CompiledErasureProgram:
     def check_lookback_links(self):
         return self._cpp_program.check_lookback_links
 
+
+@dataclass
+class RailSurfaceCompiledProgram:
+    """Surface-code-only compiled program for rail-resolved sampling/decoding."""
+
+    circuit: ErasureCircuit | object
+    model: ErasureModel | object
+    distance: int
+    rounds: int
+
+    def __post_init__(self):
+        cpp_circuit = (
+            self.circuit._to_cpp_circuit() if isinstance(self.circuit, ErasureCircuit) else self.circuit
+        )
+        cpp_model = self.model._to_cpp_model() if isinstance(self.model, ErasureModel) else self.model
+        self._cpp_program = _CppRailSurfaceCompiledProgram(
+            cpp_circuit, cpp_model, int(self.distance), int(self.rounds)
+        )
+
+    @property
+    def base_program(self):
+        return self._cpp_program.base_program
+
+    @property
+    def num_checks(self) -> int:
+        return int(self._cpp_program.base_program.num_checks)
+
+    @property
+    def num_detectors(self) -> int:
+        return int(self._cpp_program.num_detectors)
+
+    def _to_cpp_program(self):
+        return self._cpp_program
+
+
 class StreamSampler:
     """Python stream sampler that returns detector/observable/check arrays."""
 
@@ -453,6 +491,50 @@ class StreamSampler:
         return circuit_text, np.asarray(check_flags, dtype=np.uint8)
 
 
+class RailStreamSampler:
+    """Surface-code-only rail-resolved stream sampler."""
+
+    def __init__(self, program: RailSurfaceCompiledProgram | object):
+        if isinstance(program, RailSurfaceCompiledProgram):
+            self._program = program
+            cpp_program = program._to_cpp_program()
+            self._num_checks = program.num_checks
+        else:
+            self._program = program
+            cpp_program = program
+            self._num_checks = int(program.base_program.num_checks)
+        self._cpp_sampler = _CppRailStreamSampler(cpp_program)
+
+    @property
+    def num_checks(self) -> int:
+        return self._num_checks
+
+    def sample(
+        self,
+        num_shots: int,
+        seed: int,
+        num_threads: int = 1,
+    ):
+        shots = int(num_shots)
+        threads = int(num_threads)
+        if shots < 0:
+            raise ValueError("num_shots must be non-negative")
+        if threads < 0:
+            raise ValueError("num_threads must be non-negative")
+        return self._cpp_sampler.sample_syndromes(
+            shots,
+            _normalize_u32_seed(seed),
+            threads,
+        )
+
+    def sample_exact_shot(self, seed: int, shot: int):
+        circuit_text, check_flags = self._cpp_sampler.sample_exact_shot(
+            _normalize_u32_seed(seed),
+            int(shot),
+        )
+        return circuit_text, np.asarray(check_flags, dtype=np.uint8)
+
+
 class SurfDemBuilder:
     """Python wrapper for the surface-code decoded-circuit/DEM builder."""
 
@@ -499,6 +581,44 @@ class SurfDemBuilder:
         """Return a textual decoded-circuit dump for debugging invalid probability tuples."""
         checks = [int(v) for v in check_results]
         return str(self._cpp_builder.build_decoded_circuit_text(checks, bool(verbose)))
+
+
+class RailSurfaceDemBuilder:
+    """Surface-code-only DEM builder with rail-conditioned posterior calibration."""
+
+    def __init__(self, program: RailSurfaceCompiledProgram | object):
+        if isinstance(program, RailSurfaceCompiledProgram):
+            cpp_program = program._to_cpp_program()
+        else:
+            cpp_program = program
+        self._cpp_builder = _CppRailSurfaceDemBuilder(cpp_program)
+
+    def build_decoded_circuit(
+        self,
+        check_results: Sequence[int],
+        detector_samples: Sequence[int],
+        verbose: bool = False,
+    ):
+        checks = [int(v) for v in check_results]
+        detectors = [int(v) for v in detector_samples]
+        try:
+            import stim
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "The Python `stim` package is required for RailSurfaceDemBuilder.build_decoded_circuit."
+            ) from exc
+        _ = stim
+        return self._cpp_builder.build_decoded_circuit(checks, detectors, bool(verbose))
+
+    def build_decoded_circuit_text(
+        self,
+        check_results: Sequence[int],
+        detector_samples: Sequence[int],
+        verbose: bool = False,
+    ) -> str:
+        checks = [int(v) for v in check_results]
+        detectors = [int(v) for v in detector_samples]
+        return str(self._cpp_builder.build_decoded_circuit_text(checks, detectors, bool(verbose)))
 
 
 class SurfaceCodeBatchDecoder:
@@ -898,6 +1018,23 @@ def compile_erasure_sampler(
     """Convenience helper: circuit + model -> compiled program -> stream sampler."""
     program = CompiledErasureProgram(circuit=circuit, model=model)
     return StreamSampler(program)
+
+
+def compile_rail_surface_sampler(
+    circuit: ErasureCircuit | object,
+    model: ErasureModel,
+    *,
+    distance: int,
+    rounds: int,
+) -> RailStreamSampler:
+    """Surface-code-only helper: compile rail-resolved sampler path."""
+    program = RailSurfaceCompiledProgram(
+        circuit=circuit,
+        model=model,
+        distance=int(distance),
+        rounds=int(rounds),
+    )
+    return RailStreamSampler(program)
 
 
 def build_surface_code_erasure_circuit(

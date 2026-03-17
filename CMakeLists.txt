@@ -46,12 +46,15 @@ add_library(qerasure
     src/core/code/rotated_surface_code.cpp
     src/core/circuit/circuit.cc
     src/core/circuit/compile.cc
+    src/core/circuit/rail_surface_compile.cc
     src/core/decode/surf_dem_builder.cc
+    src/core/decode/rail_surface_dem_builder.cc
     src/core/gen/surf.cc
     src/core/simulator/erasure_sampler.cc
     src/core/simulator/injector.cc
     src/core/simulator/sim_internal_utils.cc
     src/core/simulator/stream_sampler.cc
+    src/core/simulator/rail_stream_sampler.cc
 )
 target_link_libraries(qerasure PRIVATE qerasure_stim)
 target_compile_features(qerasure PUBLIC cxx_std_20)
@@ -97,6 +100,7 @@ if(BUILD_TESTING)
       tests/surf_dem_builder_trace_test.cpp
       tests/surf_tail_correction_test.cpp
       tests/surf_rounds_per_check_test.cpp
+      tests/rail_surface_path_test.cpp
       tests/surf_post_clifford_pauli_test.cpp
       tests/stream_decode_dem_test.cpp
       tests/observable_flip_artifact_test.cpp
@@ -145,9 +149,12 @@ if(QERASURE_BUILD_PYTHON)
       src/core/circuit/pybind_module.cc
       src/core/circuit/pybind_circuit.cc
       src/core/circuit/pybind_compile.cc
+      src/core/circuit/pybind_rail_surface_compile.cc
       src/core/decode/pybind_surf_dem_builder.cc
+      src/core/decode/pybind_rail_surface_dem_builder.cc
       src/core/gen/pybind_surf.cc
       src/core/simulator/pybind_stream_sampler.cc
+      src/core/simulator/pybind_rail_stream_sampler.cc
   )
 
   target_link_libraries(qerasure_python PRIVATE qerasure qerasure_stim)

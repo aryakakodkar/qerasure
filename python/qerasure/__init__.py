@@ -6,6 +6,9 @@ from .circuit_model_utils import (
 	ErasureModel,
 	OpCode,
 	PauliChannel,
+	RailStreamSampler,
+	RailSurfaceCompiledProgram,
+	RailSurfaceDemBuilder,
 	SurfaceCodeBatchDecoder,
 	SurfaceCodeRotated,
 	StreamSampler,
@@ -13,6 +16,7 @@ from .circuit_model_utils import (
 	TQGSpreadModel,
 	build_surface_code_erasure_circuit,
 	compile_erasure_sampler,
+	compile_rail_surface_sampler,
 	make_erasure_model,
 )
 
@@ -26,8 +30,12 @@ __all__ = [
 	"SurfaceCodeBatchDecoder",
 	"ErasureCircuit",
 	"CompiledErasureProgram",
+	"RailSurfaceCompiledProgram",
 	"StreamSampler",
+	"RailStreamSampler",
 	"build_surface_code_erasure_circuit",
 	"compile_erasure_sampler",
+	"compile_rail_surface_sampler",
+	"RailSurfaceDemBuilder",
 	"make_erasure_model",
 ]
