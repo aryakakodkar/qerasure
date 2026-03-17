@@ -95,6 +95,11 @@ These are additive and do not replace existing `CompiledErasureProgram`, `Stream
   - perfect checks (`p_fn = p_fp = 0`),
   - "erasure-only" model channels (`onset/reset/spread` Pauli channels set to zero).
 
+- Added `apps/rail_inconsistency_posterior_bars.py` for the strict 9-hypothesis view:
+  - 8 onset-spot hypotheses + 1 no-erasure hypothesis.
+  - Conditioned on flagged data checks with observed adjacent Z-ancilla inconsistency.
+  - Produces side-by-side bar charts for `XZZX_interior` and `ZXXZ_interior`.
+
 ## Validation Performed
 - Build:
   - `cmake -S . -B build-release -DQERASURE_BUILD_PYTHON=ON`

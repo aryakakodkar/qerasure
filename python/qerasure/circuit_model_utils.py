@@ -411,6 +411,29 @@ class RailSurfaceCompiledProgram:
     def num_detectors(self) -> int:
         return int(self._cpp_program.num_detectors)
 
+    @property
+    def check_event_to_qubit(self):
+        return self._cpp_program.check_event_to_qubit
+
+    @property
+    def check_event_to_op_index(self):
+        return self._cpp_program.check_event_to_op_index
+
+    def op_round(self, op_index: int) -> int:
+        return int(self._cpp_program.op_round(int(op_index)))
+
+    def data_z_ancilla_slots(self, data_qubit: int):
+        return tuple(int(v) for v in self._cpp_program.data_z_ancilla_slots(int(data_qubit)))
+
+    def round_detector_index(self, round_index: int, z_ancilla: int) -> int:
+        return int(self._cpp_program.round_detector_index(int(round_index), int(z_ancilla)))
+
+    def data_qubit_schedule_type(self, data_qubit: int) -> int:
+        return int(self._cpp_program.data_qubit_schedule_type(int(data_qubit)))
+
+    def data_qubit_is_boundary(self, data_qubit: int) -> bool:
+        return bool(self._cpp_program.data_qubit_is_boundary(int(data_qubit)))
+
     def _to_cpp_program(self):
         return self._cpp_program
 
