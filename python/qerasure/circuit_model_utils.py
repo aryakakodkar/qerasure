@@ -18,6 +18,7 @@ SurfaceCodeRotated = cpp.SurfaceCodeRotated
 _CppErasureModel = cpp.ErasureModel
 _CppRailSurfaceCompiledProgram = cpp.RailSurfaceCompiledProgram
 _CppRailStreamSampler = cpp.RailStreamSampler
+_CppRailCalibrationSampler = cpp.RailCalibrationSampler
 _CppRailSurfaceDemBuilder = cpp.RailSurfaceDemBuilder
 _UINT32_MAX = (1 << 32) - 1
 _STIM_TEXT_FALLBACK_WARNED = False
@@ -563,6 +564,54 @@ class RailStreamSampler:
             int(shot),
         )
         return circuit_text, np.asarray(check_flags, dtype=np.uint8)
+
+
+class RailCalibrationSampler:
+    """Rail sampler that also exposes latent onset-op index per check event."""
+
+    def __init__(self, program: RailSurfaceCompiledProgram | object):
+        if isinstance(program, RailSurfaceCompiledProgram):
+            self._program = program
+            cpp_program = program._to_cpp_program()
+            self._num_checks = program.num_checks
+        else:
+            self._program = program
+            cpp_program = program
+            self._num_checks = int(program.base_program.num_checks)
+        self._cpp_sampler = _CppRailCalibrationSampler(cpp_program)
+
+    @property
+    def num_checks(self) -> int:
+        return self._num_checks
+
+    def sample(
+        self,
+        num_shots: int,
+        seed: int,
+        num_threads: int = 1,
+    ):
+        shots = int(num_shots)
+        threads = int(num_threads)
+        if shots < 0:
+            raise ValueError("num_shots must be non-negative")
+        if threads < 0:
+            raise ValueError("num_threads must be non-negative")
+        return self._cpp_sampler.sample_syndromes(
+            shots,
+            _normalize_u32_seed(seed),
+            threads,
+        )
+
+    def sample_exact_shot(self, seed: int, shot: int):
+        circuit_text, check_flags, onset_ops = self._cpp_sampler.sample_exact_shot(
+            _normalize_u32_seed(seed),
+            int(shot),
+        )
+        return (
+            circuit_text,
+            np.asarray(check_flags, dtype=np.uint8),
+            np.asarray(onset_ops, dtype=np.int32),
+        )
 
 
 class SurfDemBuilder:

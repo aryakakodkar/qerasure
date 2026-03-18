@@ -324,6 +324,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--calibration-source",
+        choices=["latent", "inferred"],
+        default="latent",
+        help=(
+            "How onset posteriors are obtained. "
+            "'latent' uses true onset locations from a calibration-only sampler; "
+            "'inferred' uses DEM-builder posterior inference."
+        ),
+    )
+    parser.add_argument(
         "--conditioning-signal",
         choices=["pair_parity", "full_detectors"],
         default="pair_parity",
@@ -339,7 +349,7 @@ def main() -> None:
         default=False,
         help=(
             "For rounds_per_check=1, show full max-persistence lookback hypotheses as "
-            "prev_step1..prev_step4 + step1..step4 + no_erasure."
+            "round(n-1)_step1..4 + round(n)_step1..4 (+ no_erasure if enabled)."
         ),
     )
     parser.add_argument(
@@ -426,7 +436,10 @@ def main() -> None:
         distance=args.distance,
         rounds=args.rounds,
     )
-    sampler = qe.RailStreamSampler(rail_program)
+    if args.calibration_source == "latent":
+        sampler = qe.RailCalibrationSampler(rail_program)
+    else:
+        sampler = qe.RailStreamSampler(rail_program)
     dem_builder = qe.RailSurfaceDemBuilder(rail_program)
 
     use_canonical_step_bins = bool(args.canonical_step_bins and args.rounds_per_check == 1)
@@ -475,13 +488,22 @@ def main() -> None:
         if remaining <= 0:
             break
         shots_this_iter = min(shots_this_iter, remaining)
-        dets, _, checks = sampler.sample(shots_this_iter, next_seed, num_threads=1)
+        if args.calibration_source == "latent":
+            dets, _, checks, latent_onset_ops = sampler.sample(
+                shots_this_iter,
+                next_seed,
+                num_threads=1,
+            )
+        else:
+            dets, _, checks = sampler.sample(shots_this_iter, next_seed, num_threads=1)
+            latent_onset_ops = None
         total_shots_sampled += shots_this_iter
         next_seed += shots_this_iter
 
         for shot in range(shots_this_iter):
             check_row = checks[shot].tolist()
             det_row = dets[shot]
+            onset_row = None if latent_onset_ops is None else latent_onset_ops[shot]
             unique_flagged_data_idx = None
             if args.isolate_single_flagged_data_check:
                 flagged_indices = [idx for idx, bit in enumerate(check_row) if bit == 1]
@@ -546,140 +568,186 @@ def main() -> None:
                     continue
 
                 event_rows.sort(key=lambda r: int(r["onset_op_index"]))
-
-                if use_full_lookback_bins:
-                    if args.condition == "three_case":
-                        prev_round = int(check_round) - 2
-                        curr_round = int(check_round) - 1
-                    else:
-                        prev_round = int(check_round) - 1
-                        curr_round = int(check_round)
-                    rows_by_round = {
-                        prev_round: [],
-                        curr_round: [],
-                    }
-                    for r in event_rows:
-                        onset_round = rail_program.op_round(int(r["onset_op_index"]))
-                        if onset_round in rows_by_round:
-                            rows_by_round[onset_round].append(r)
-                    for rr in rows_by_round:
-                        rows_by_round[rr].sort(key=lambda r: int(r["onset_op_index"]))
-
-                    onset_values = [0.0] * 8
-                    onset_priors = [0.0] * 8
-                    onset_event_likelihood = [0.0] * 8
-
-                    def fill_round_bins(round_index: int, base_offset: int) -> None:
-                        local_rows = rows_by_round[round_index]
-                        for j, row in enumerate(local_rows[:4]):
-                            onset_values[base_offset + j] = float(row["posterior_mass"])
-                            onset_priors[base_offset + j] = max(0.0, float(row["prior_mass"]))
-
-                    fill_round_bins(prev_round, 0)
-                    fill_round_bins(curr_round, 4)
-
-                    if args.conditioning_signal == "full_detectors":
-                        onset_probs = onset_values
-                        if args.include_no_erasure:
-                            no_erasure = max(0.0, 1.0 - float(sum(onset_probs)))
-                            vec = np.asarray(onset_probs + [no_erasure], dtype=float)
-                        else:
-                            vec = np.asarray(onset_probs, dtype=float)
-                    else:
+                if args.calibration_source == "latent":
+                    true_onset_op = int(onset_row[int(check_event_index)]) if onset_row is not None else -1
+                    vec = np.zeros(num_hypotheses, dtype=float)
+                    mapped_index = -1
+                    if use_full_lookback_bins:
                         if args.condition == "three_case":
-                            for step_idx in range(1, 5):
-                                p_prev = branch_two_round_case_likelihood(
-                                    int(schedule_type), 0, step_idx, onset_flip_probability, condition_key
-                                )
-                                p_curr = branch_two_round_case_likelihood(
-                                    int(schedule_type), 1, step_idx, onset_flip_probability, condition_key
-                                )
-                                onset_event_likelihood[step_idx - 1] = max(
-                                    three_case_mismatch_floor, p_prev
-                                )
-                                onset_event_likelihood[4 + step_idx - 1] = max(
-                                    three_case_mismatch_floor, p_curr
-                                )
+                            prev_round = int(check_round) - 2
+                            curr_round = int(check_round) - 1
                         else:
-                            for i in range(4):
-                                if prev_round >= 0:
-                                    p_incons = 1.0
-                                else:
-                                    p_incons = 0.0
-                                onset_event_likelihood[i] = (
-                                    p_incons if condition_key == "inconsistency" else (1.0 - p_incons)
+                            prev_round = int(check_round) - 1
+                            curr_round = int(check_round)
+                        rows_by_round = {
+                            prev_round: [],
+                            curr_round: [],
+                        }
+                        for row in event_rows:
+                            onset_round = rail_program.op_round(int(row["onset_op_index"]))
+                            if onset_round in rows_by_round:
+                                rows_by_round[onset_round].append(row)
+                        for rr in rows_by_round:
+                            rows_by_round[rr].sort(key=lambda row: int(row["onset_op_index"]))
+                        onset_to_bin: dict[int, int] = {}
+                        for j, row in enumerate(rows_by_round[prev_round][:4]):
+                            onset_to_bin[int(row["onset_op_index"])] = j
+                        for j, row in enumerate(rows_by_round[curr_round][:4]):
+                            onset_to_bin[int(row["onset_op_index"])] = 4 + j
+                        mapped_index = onset_to_bin.get(true_onset_op, -1)
+                    elif use_canonical_step_bins:
+                        current_round_rows = [
+                            row
+                            for row in event_rows
+                            if rail_program.op_round(int(row["onset_op_index"])) == int(check_round)
+                        ]
+                        if len(current_round_rows) != 4:
+                            continue
+                        current_round_rows.sort(key=lambda row: int(row["onset_op_index"]))
+                        onset_to_bin = {
+                            int(row["onset_op_index"]): j for j, row in enumerate(current_round_rows[:4])
+                        }
+                        mapped_index = onset_to_bin.get(true_onset_op, -1)
+                    else:
+                        if len(event_rows) < 8:
+                            continue
+                        onset_to_bin = {
+                            int(row["onset_op_index"]): j for j, row in enumerate(event_rows[:8])
+                        }
+                        mapped_index = onset_to_bin.get(true_onset_op, -1)
+
+                    if mapped_index >= 0:
+                        vec[mapped_index] = 1.0
+                    elif args.include_no_erasure:
+                        vec[-1] = 1.0
+                else:
+                    if use_full_lookback_bins:
+                        if args.condition == "three_case":
+                            prev_round = int(check_round) - 2
+                            curr_round = int(check_round) - 1
+                        else:
+                            prev_round = int(check_round) - 1
+                            curr_round = int(check_round)
+                        rows_by_round = {
+                            prev_round: [],
+                            curr_round: [],
+                        }
+                        for r in event_rows:
+                            onset_round = rail_program.op_round(int(r["onset_op_index"]))
+                            if onset_round in rows_by_round:
+                                rows_by_round[onset_round].append(r)
+                        for rr in rows_by_round:
+                            rows_by_round[rr].sort(key=lambda r: int(r["onset_op_index"]))
+
+                        onset_values = [0.0] * 8
+                        onset_priors = [0.0] * 8
+                        onset_event_likelihood = [0.0] * 8
+
+                        def fill_round_bins(round_index: int, base_offset: int) -> None:
+                            local_rows = rows_by_round[round_index]
+                            for j, row in enumerate(local_rows[:4]):
+                                onset_values[base_offset + j] = float(row["posterior_mass"])
+                                onset_priors[base_offset + j] = max(0.0, float(row["prior_mass"]))
+
+                        fill_round_bins(prev_round, 0)
+                        fill_round_bins(curr_round, 4)
+
+                        if args.conditioning_signal == "full_detectors":
+                            onset_probs = onset_values
+                            if args.include_no_erasure:
+                                no_erasure = max(0.0, 1.0 - float(sum(onset_probs)))
+                                vec = np.asarray(onset_probs + [no_erasure], dtype=float)
+                            else:
+                                vec = np.asarray(onset_probs, dtype=float)
+                        else:
+                            if args.condition == "three_case":
+                                for step_idx in range(1, 5):
+                                    p_prev = branch_two_round_case_likelihood(
+                                        int(schedule_type), 0, step_idx, onset_flip_probability, condition_key
+                                    )
+                                    p_curr = branch_two_round_case_likelihood(
+                                        int(schedule_type), 1, step_idx, onset_flip_probability, condition_key
+                                    )
+                                    onset_event_likelihood[step_idx - 1] = max(
+                                        three_case_mismatch_floor, p_prev
+                                    )
+                                    onset_event_likelihood[4 + step_idx - 1] = max(
+                                        three_case_mismatch_floor, p_curr
+                                    )
+                            else:
+                                for i in range(4):
+                                    if prev_round >= 0:
+                                        p_incons = 1.0
+                                    else:
+                                        p_incons = 0.0
+                                    onset_event_likelihood[i] = (
+                                        p_incons if condition_key == "inconsistency" else (1.0 - p_incons)
+                                    )
+                                current_round_rows = rows_by_round[curr_round]
+                                for j in range(min(4, len(current_round_rows))):
+                                    step_idx = j + 1
+                                    p_incons = branch_inconsistency_likelihood(
+                                        int(schedule_type),
+                                        step_idx,
+                                        onset_flip_probability,
+                                    )
+                                    onset_event_likelihood[4 + j] = (
+                                        p_incons if condition_key == "inconsistency" else (1.0 - p_incons)
+                                    )
+                            no_erasure_posterior = max(0.0, 1.0 - float(sum(onset_values)))
+                            unnorm = [
+                                onset_priors[i] * max(0.0, onset_event_likelihood[i]) for i in range(8)
+                            ]
+                            total_onset = float(sum(unnorm))
+                            if total_onset <= 0.0:
+                                continue
+                            visible_mass = max(0.0, 1.0 - no_erasure_posterior)
+                            onset_posterior = [(x / total_onset) * visible_mass for x in unnorm]
+                            if args.include_no_erasure:
+                                vec = np.asarray(
+                                    onset_posterior + [no_erasure_posterior],
+                                    dtype=float,
                                 )
-                            current_round_rows = rows_by_round[curr_round]
-                            for j in range(min(4, len(current_round_rows))):
-                                step_idx = j + 1
+                            else:
+                                vec = np.asarray(onset_posterior, dtype=float)
+                    elif use_canonical_step_bins:
+                        current_round_rows = [
+                            r for r in event_rows if rail_program.op_round(int(r["onset_op_index"])) == int(check_round)
+                        ]
+                        if len(current_round_rows) != 4:
+                            continue
+                        current_round_rows.sort(key=lambda r: int(r["onset_op_index"]))
+                        if args.conditioning_signal == "full_detectors":
+                            step_probs = [float(r["posterior_mass"]) for r in current_round_rows]
+                            total = float(sum(step_probs))
+                            if total <= 0.0:
+                                continue
+                            step_probs = [x / total for x in step_probs]
+                        else:
+                            priors = [max(0.0, float(r["prior_mass"])) for r in current_round_rows]
+                            unnorm = []
+                            for step_idx, prior in enumerate(priors, start=1):
                                 p_incons = branch_inconsistency_likelihood(
                                     int(schedule_type),
                                     step_idx,
                                     onset_flip_probability,
                                 )
-                                onset_event_likelihood[4 + j] = (
-                                    p_incons if condition_key == "inconsistency" else (1.0 - p_incons)
-                                )
-                        no_erasure_prior = max(0.0, 1.0 - float(sum(onset_priors)))
-                        if args.condition == "three_case":
-                            p_event_no_erasure = (
-                                1.0 if condition_key == "consistent_both" else three_case_mismatch_floor
-                            )
-                        else:
-                            p_event_no_erasure = 0.0 if condition_key == "inconsistency" else 1.0
-                        unnorm = [
-                            onset_priors[i] * max(0.0, onset_event_likelihood[i]) for i in range(8)
-                        ]
-                        unnorm_no_erasure = no_erasure_prior * p_event_no_erasure
-                        total = float(sum(unnorm) + unnorm_no_erasure)
-                        if total <= 0.0:
+                                p_event = p_incons if condition_key == "inconsistency" else (1.0 - p_incons)
+                                unnorm.append(prior * max(0.0, p_event))
+                            total = float(sum(unnorm))
+                            if total <= 0.0:
+                                continue
+                            step_probs = [x / total for x in unnorm]
+                        vec = np.asarray(step_probs, dtype=float)
+                    else:
+                        spot_probs = [float(r["posterior_mass"]) for r in event_rows]
+                        if len(spot_probs) != 8:
                             continue
-                        onset_posterior = [x / total for x in unnorm]
                         if args.include_no_erasure:
-                            vec = np.asarray(
-                                onset_posterior + [unnorm_no_erasure / total],
-                                dtype=float,
-                            )
+                            no_erasure = max(0.0, 1.0 - float(sum(spot_probs)))
+                            vec = np.asarray(spot_probs + [no_erasure], dtype=float)
                         else:
-                            vec = np.asarray(onset_posterior, dtype=float)
-                elif use_canonical_step_bins:
-                    current_round_rows = [
-                        r for r in event_rows if rail_program.op_round(int(r["onset_op_index"])) == int(check_round)
-                    ]
-                    if len(current_round_rows) != 4:
-                        continue
-                    current_round_rows.sort(key=lambda r: int(r["onset_op_index"]))
-                    if args.conditioning_signal == "full_detectors":
-                        step_probs = [float(r["posterior_mass"]) for r in current_round_rows]
-                        total = float(sum(step_probs))
-                        if total <= 0.0:
-                            continue
-                        step_probs = [x / total for x in step_probs]
-                    else:
-                        priors = [max(0.0, float(r["prior_mass"])) for r in current_round_rows]
-                        unnorm = []
-                        for step_idx, prior in enumerate(priors, start=1):
-                            p_incons = branch_inconsistency_likelihood(
-                                int(schedule_type),
-                                step_idx,
-                                onset_flip_probability,
-                            )
-                            p_event = p_incons if condition_key == "inconsistency" else (1.0 - p_incons)
-                            unnorm.append(prior * max(0.0, p_event))
-                        total = float(sum(unnorm))
-                        if total <= 0.0:
-                            continue
-                        step_probs = [x / total for x in unnorm]
-                    vec = np.asarray(step_probs, dtype=float)
-                else:
-                    spot_probs = [float(r["posterior_mass"]) for r in event_rows]
-                    if len(spot_probs) != 8:
-                        continue
-                    if args.include_no_erasure:
-                        no_erasure = max(0.0, 1.0 - float(sum(spot_probs)))
-                        vec = np.asarray(spot_probs + [no_erasure], dtype=float)
-                    else:
-                        vec = np.asarray(spot_probs, dtype=float)
+                            vec = np.asarray(spot_probs, dtype=float)
                 label = schedule_label(schedule_type)
                 sum_by_condition_type[condition_key][label] += vec
                 sumsq_by_condition_type[condition_key][label] += vec * vec
@@ -715,26 +783,26 @@ def main() -> None:
     labels = (
         (
             [
-                "prev_step1",
-                "prev_step2",
-                "prev_step3",
-                "prev_step4",
-                "step1",
-                "step2",
-                "step3",
-                "step4",
+                "round(n-1)_step1",
+                "round(n-1)_step2",
+                "round(n-1)_step3",
+                "round(n-1)_step4",
+                "round(n)_step1",
+                "round(n)_step2",
+                "round(n)_step3",
+                "round(n)_step4",
                 "no_erasure",
             ]
             if args.include_no_erasure
             else [
-                "prev_step1",
-                "prev_step2",
-                "prev_step3",
-                "prev_step4",
-                "step1",
-                "step2",
-                "step3",
-                "step4",
+                "round(n-1)_step1",
+                "round(n-1)_step2",
+                "round(n-1)_step3",
+                "round(n-1)_step4",
+                "round(n)_step1",
+                "round(n)_step2",
+                "round(n)_step3",
+                "round(n)_step4",
             ]
         )
         if use_full_lookback_bins
@@ -749,7 +817,7 @@ def main() -> None:
         )
     )
     stats_by_condition_type = {}
-    y_top = 0.0
+    y_top_by_condition = {cond: 0.0 for cond in condition_keys}
     for cond in condition_keys:
         stats_by_condition_type[cond] = {}
         for qtype in qtypes:
@@ -762,19 +830,24 @@ def main() -> None:
                 )
                 std = np.sqrt(var)
                 err = std / np.sqrt(float(n))
-                y_top = max(y_top, float(np.max(mean + err)))
+                y_top_by_condition[cond] = max(
+                    y_top_by_condition[cond], float(np.max(mean + err))
+                )
             else:
                 mean = np.zeros(num_hypotheses, dtype=float)
                 std = np.zeros(num_hypotheses, dtype=float)
                 err = np.zeros(num_hypotheses, dtype=float)
             stats_by_condition_type[cond][qtype] = (n, mean, std, err)
 
-    y_lim_top = min(1.0, max(0.25, y_top * 1.15))
+    y_lim_top_by_condition = {
+        cond: min(1.0, max(0.02, y_top_by_condition[cond] * 1.15))
+        for cond in condition_keys
+    }
     summary = {cond: {} for cond in condition_keys}
 
     if len(condition_keys) > 1:
         n_rows = len(condition_keys)
-        fig, axes = plt.subplots(n_rows, 2, figsize=(14, 4.8 * n_rows), sharey=True)
+        fig, axes = plt.subplots(n_rows, 2, figsize=(14, 4.8 * n_rows), sharey="row")
         for row, cond in enumerate(condition_keys):
             for col, qtype in enumerate(qtypes):
                 ax = axes[row, col]
@@ -794,7 +867,7 @@ def main() -> None:
                 ax.set_title(f"{qtype} | {cond_label} (n={n})")
                 ax.set_xticks(x)
                 ax.set_xticklabels(labels, rotation=30, ha="right")
-                ax.set_ylim(0.0, y_lim_top)
+                ax.set_ylim(0.0, y_lim_top_by_condition[cond])
                 ax.grid(axis="y", alpha=0.3)
                 summary[cond][qtype] = {
                     "count": n,
@@ -826,7 +899,7 @@ def main() -> None:
             ax.set_title(f"{qtype} | {cond_label} (n={n})")
             ax.set_xticks(x)
             ax.set_xticklabels(labels, rotation=30, ha="right")
-            ax.set_ylim(0.0, y_lim_top)
+            ax.set_ylim(0.0, y_lim_top_by_condition[cond])
             ax.grid(axis="y", alpha=0.3)
             summary[cond][qtype] = {
                 "count": n,
@@ -847,7 +920,7 @@ def main() -> None:
     fig.suptitle(
         f"Rail Calibration Posterior ({num_hypotheses} hypotheses, d={args.distance}, rounds={args.rounds}, "
         f"shots={total_shots_sampled}, p_e={args.erasure_prob}, q_fn={args.check_fn}, q_fp={args.check_fp}, "
-        f"mp=2, condition={cond_descriptor})"
+        f"mp=2, condition={cond_descriptor}, source={args.calibration_source})"
     )
     fig.tight_layout()
 
@@ -871,6 +944,7 @@ def main() -> None:
         "condition": args.condition,
         "conditions": condition_keys,
         "inconsistency_window": args.inconsistency_window,
+        "calibration_source": args.calibration_source,
         "conditioning_signal": args.conditioning_signal,
         "isolate_single_flagged_data_check": bool(args.isolate_single_flagged_data_check),
         "require_prev_check_unflagged": bool(args.require_prev_check_unflagged),

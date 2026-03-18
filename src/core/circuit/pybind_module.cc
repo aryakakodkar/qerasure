@@ -11,6 +11,7 @@ void bind_surf_dem_builder(py::module_& m);
 void bind_rail_surface_dem_builder(py::module_& m);
 void bind_stream_sampler(py::module_& m);
 void bind_rail_stream_sampler(py::module_& m);
+void bind_rail_calibration_sampler(py::module_& m);
 }  // namespace qerasure::python_bindings
 
 PYBIND11_MODULE(qerasure_python, m) {
@@ -24,4 +25,5 @@ PYBIND11_MODULE(qerasure_python, m) {
   qerasure::python_bindings::bind_rail_surface_dem_builder(m);
   qerasure::python_bindings::bind_stream_sampler(m);
   qerasure::python_bindings::bind_rail_stream_sampler(m);
+  qerasure::python_bindings::bind_rail_calibration_sampler(m);
 }

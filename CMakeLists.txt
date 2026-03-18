@@ -55,6 +55,7 @@ add_library(qerasure
     src/core/simulator/sim_internal_utils.cc
     src/core/simulator/stream_sampler.cc
     src/core/simulator/rail_stream_sampler.cc
+    src/core/simulator/rail_calibration_sampler.cc
 )
 target_link_libraries(qerasure PRIVATE qerasure_stim)
 target_compile_features(qerasure PUBLIC cxx_std_20)
@@ -155,6 +156,7 @@ if(QERASURE_BUILD_PYTHON)
       src/core/gen/pybind_surf.cc
       src/core/simulator/pybind_stream_sampler.cc
       src/core/simulator/pybind_rail_stream_sampler.cc
+      src/core/simulator/pybind_rail_calibration_sampler.cc
   )
 
   target_link_libraries(qerasure_python PRIVATE qerasure qerasure_stim)
