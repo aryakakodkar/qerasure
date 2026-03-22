@@ -10,6 +10,7 @@ import math
 import secrets
 import sys
 import time
+import traceback
 from collections import defaultdict
 from pathlib import Path
 
@@ -345,6 +346,8 @@ def decode_with_rail(
 
     pred_rows = []
     decode_failures = 0
+    first_decode_error: str | None = None
+    first_decode_traceback: str | None = None
     for shot in range(int(dets.shape[0])):
         try:
             decoded_circuit = dem_builder.build_decoded_circuit(
@@ -361,8 +364,11 @@ def decode_with_rail(
             if pred.ndim == 0:
                 pred = pred.reshape(1)
             pred_rows.append(pred)
-        except Exception:
+        except Exception as exc:
             decode_failures += 1
+            if first_decode_error is None:
+                first_decode_error = f"{type(exc).__name__}: {exc}"
+                first_decode_traceback = traceback.format_exc()
             pred_rows.append(np.zeros((1,), dtype=np.uint8))
     t2 = time.perf_counter()
 
@@ -385,6 +391,8 @@ def decode_with_rail(
             "decode": float(t2 - t1),
             "total": float(t2 - t0),
         },
+        "first_decode_error": first_decode_error,
+        "first_decode_traceback": first_decode_traceback,
     }
 
 
@@ -935,6 +943,14 @@ def main() -> None:
             f"normal LER/round={normal_row['logical_error_rate_per_round']:.6g}",
             flush=True,
         )
+        if int(rail_row.get("decode_failures", 0)) > 0:
+            print(
+                f"  [rail decode failure] first_decode_error: "
+                f"{rail_row.get('first_decode_error', '<none captured>')}",
+                flush=True,
+            )
+            if rail_row.get("first_decode_traceback"):
+                print(rail_row["first_decode_traceback"], flush=True)
 
     if int(args.sweep_workers) == 1:
         for task in point_tasks:
