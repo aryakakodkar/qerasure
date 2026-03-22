@@ -768,7 +768,14 @@ class RailSurfaceDemBuilder:
                 "The Python `stim` package is required for RailSurfaceDemBuilder.build_decoded_circuit."
             ) from exc
         _ = stim
-        return self._cpp_builder.build_decoded_circuit(checks, detectors, bool(verbose))
+        try:
+            return self._cpp_builder.build_decoded_circuit(checks, detectors, bool(verbose))
+        except TypeError:
+            # Fallback for environments where pybind's stim::Circuit caster isn't
+            # registered across extension-module boundaries.
+            return stim.Circuit(
+                str(self._cpp_builder.build_decoded_circuit_text(checks, detectors, bool(verbose)))
+            )
 
     def build_decoded_circuit_text(
         self,
