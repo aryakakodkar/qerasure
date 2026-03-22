@@ -51,9 +51,9 @@ RailSurfaceCompiledProgram::RailSurfaceCompiledProgram(
   if (rounds_ == 0) {
     throw std::invalid_argument("RailSurfaceCompiledProgram requires rounds > 0");
   }
-  if (model.max_persistence != 2) {
+  if (model.max_persistence < 1 || model.max_persistence > 2) {
     throw std::invalid_argument(
-        "RailSurfaceCompiledProgram currently supports only max_persistence=2");
+        "RailSurfaceCompiledProgram currently supports only max_persistence in {1,2}");
   }
   if (base_program_.max_qubit_index() + 1 != code_.num_qubits()) {
     throw std::invalid_argument(

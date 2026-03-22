@@ -76,19 +76,26 @@ def classify_two_round_case(
     det_row: np.ndarray,
     data_qubit: int,
     check_round: int,
+    include_round1: bool = True,
 ) -> str:
-    # round1 := check_round-2, round2 := check_round-1
-    # (the two rounds before the flagged check at check_round)
-    inc_round1 = pair_inconsistency_in_round(
-        rail_program, det_row, data_qubit, int(check_round) - 2
+    # round1 := check_round-1, round2 := check_round
+    # where round2 is the round immediately preceding the flagged check.
+    inc_round1 = (
+        pair_inconsistency_in_round(
+            rail_program, det_row, data_qubit, int(check_round) - 1
+        )
+        if include_round1
+        else False
     )
     inc_round2 = pair_inconsistency_in_round(
-        rail_program, det_row, data_qubit, int(check_round) - 1
+        rail_program, det_row, data_qubit, int(check_round)
     )
-    if inc_round1 and not inc_round2:
-        return "inc_round1"
+    if inc_round1 and inc_round2:
+        return "inc_both"
+    if inc_round1:
+        return "inc_round1_only"
     if inc_round2:
-        return "inc_round2"
+        return "inc_round2_only"
     return "consistent_both"
 
 
@@ -200,10 +207,12 @@ def branch_two_round_case_likelihood(
                     det[r][anc] = erasure_bit ^ onset_flip_here
             inc_round1 = (det[0][0] ^ det[0][1]) == 1
             inc_round2 = (det[1][0] ^ det[1][1]) == 1
-            if case_key == "inc_round1":
+            if case_key == "inc_round1_only":
                 match = inc_round1 and (not inc_round2)
-            elif case_key == "inc_round2":
-                match = inc_round2
+            elif case_key == "inc_round2_only":
+                match = (not inc_round1) and inc_round2
+            elif case_key == "inc_both":
+                match = inc_round1 and inc_round2
             elif case_key == "consistent_both":
                 match = (not inc_round1) and (not inc_round2)
             else:
@@ -218,12 +227,14 @@ def condition_display_label(condition_key: str) -> str:
         return "inconsistency"
     if condition_key == "no_inconsistency":
         return "consistency"
-    if condition_key == "inc_round1":
-        return "inc in round1"
-    if condition_key == "inc_round2":
-        return "inc in round2"
+    if condition_key == "inc_round1_only":
+        return "inc only in round1 (10)"
+    if condition_key == "inc_round2_only":
+        return "inc only in round2 (01)"
+    if condition_key == "inc_both":
+        return "inc in both rounds (11)"
     if condition_key == "consistent_both":
-        return "consistent in both"
+        return "consistent in both (00)"
     return condition_key
 
 
@@ -286,12 +297,29 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--truncate-lookback-on-consecutive-flag",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "For --condition three_case, if previous same-qubit check is flagged, "
+            "only use round(n) (drop round(n-1)) to avoid double counting."
+        ),
+    )
+    parser.add_argument(
         "--full-interior-only",
         action=argparse.BooleanOptionalAction,
         default=True,
         help=(
             "Restrict to data qubits with both X-ancilla partners and both Z-ancilla partners. "
             "For rounds_per_check=1 this yields the expected four onset opportunities."
+        ),
+    )
+    parser.add_argument(
+        "--exclude-final-check-round",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Exclude flagged checks that occur in the final circuit round from calibration stats."
         ),
     )
     parser.add_argument("--seed", type=int, default=920004)
@@ -368,10 +396,22 @@ def main() -> None:
         type=Path,
         default=None,
     )
+    parser.add_argument(
+        "--inverse-png-out",
+        type=Path,
+        default=None,
+        help="Output PNG for inverse posterior plot P(condition | onset).",
+    )
+    parser.add_argument(
+        "--inverse-json-out",
+        type=Path,
+        default=None,
+        help="Output JSON for inverse posterior summary P(condition | onset).",
+    )
     args = parser.parse_args()
     if args.png_out is None:
         if args.condition == "three_case":
-            suffix = "three_case_3x2"
+            suffix = "three_case_4x2"
         elif args.condition == "both":
             suffix = "inconsistency_consistency_4x4"
         else:
@@ -379,12 +419,20 @@ def main() -> None:
         args.png_out = REPO_ROOT / "apps" / "results" / f"rail_{suffix}_posterior_bars.png"
     if args.json_out is None:
         if args.condition == "three_case":
-            suffix = "three_case_3x2"
+            suffix = "three_case_4x2"
         elif args.condition == "both":
             suffix = "inconsistency_consistency_4x4"
         else:
             suffix = "inconsistency" if args.condition == "inconsistency" else "no_inconsistency"
         args.json_out = REPO_ROOT / "apps" / "results" / f"rail_{suffix}_posterior_bars.json"
+    if args.inverse_png_out is None:
+        args.inverse_png_out = args.png_out.with_name(
+            f"{args.png_out.stem}_condition_given_onset{args.png_out.suffix}"
+        )
+    if args.inverse_json_out is None:
+        args.inverse_json_out = args.json_out.with_name(
+            f"{args.json_out.stem}_condition_given_onset{args.json_out.suffix}"
+        )
     if args.shots <= 0:
         raise ValueError("--shots must be positive")
     if args.chunk_shots <= 0:
@@ -396,10 +444,10 @@ def main() -> None:
     if args.min_events_per_type <= 0:
         raise ValueError("--min-events-per-type must be positive")
     if args.condition == "three_case" and not (
-        args.rounds_per_check == 1 and args.canonical_step_bins and args.full_lookback_bins
+        args.canonical_step_bins and args.full_lookback_bins
     ):
         raise ValueError(
-            "--condition three_case requires rounds_per_check=1 with "
+            "--condition three_case requires "
             "--canonical-step-bins and --full-lookback-bins."
         )
 
@@ -410,19 +458,19 @@ def main() -> None:
         erasable_qubits="ALL",
         reset_failure_prob=0.0,
         ecr_after_each_step=False,
-        single_qubit_errors=False,
+        single_qubit_errors=True,
         post_clifford_pauli_prob=0.0,
         rounds_per_check=args.rounds_per_check,
     )
 
-    # Erasure-only + perfect checks baseline.
+    # Calibration model aligned with the real sweep calibrator.
     model = qe.ErasureModel(
         2,
         qe.PauliChannel(0.25, 0.25, 0.25),
-        qe.PauliChannel(0.0, 0.0, 0.0),
+        qe.PauliChannel(0.25, 0.25, 0.25),
         qe.TQGSpreadModel(
             qe.PauliChannel(0.0, 0.0, 0.0),
-            qe.PauliChannel(0.0, 0.0, 0.0),
+            qe.PauliChannel(0.0, 0.0, 0.5),
         ),
     )
     onset_flip_probability = float(model.onset.p_x + model.onset.p_y)
@@ -442,7 +490,7 @@ def main() -> None:
         sampler = qe.RailStreamSampler(rail_program)
     dem_builder = qe.RailSurfaceDemBuilder(rail_program)
 
-    use_canonical_step_bins = bool(args.canonical_step_bins and args.rounds_per_check == 1)
+    use_canonical_step_bins = bool(args.canonical_step_bins)
     use_full_lookback_bins = bool(use_canonical_step_bins and args.full_lookback_bins)
     if use_full_lookback_bins:
         num_hypotheses = 9 if args.include_no_erasure else 8
@@ -454,7 +502,12 @@ def main() -> None:
     if args.condition == "both":
         condition_keys = ["inconsistency", "no_inconsistency"]
     elif args.condition == "three_case":
-        condition_keys = ["inc_round1", "inc_round2", "consistent_both"]
+        condition_keys = [
+            "consistent_both",
+            "inc_round1_only",
+            "inc_round2_only",
+            "inc_both",
+        ]
     else:
         condition_keys = [args.condition]
     sum_by_condition_type = {
@@ -532,6 +585,8 @@ def main() -> None:
 
             for key, event_rows in grouped.items():
                 check_event_index, data_qubit, check_round, schedule_type, is_boundary = key
+                if args.exclude_final_check_round and int(check_round) == int(args.rounds) - 1:
+                    continue
                 if args.full_interior_only:
                     if not rail_program.data_qubit_is_full_interior(data_qubit):
                         continue
@@ -542,18 +597,29 @@ def main() -> None:
                         continue
                     if int(check_event_index) != int(unique_flagged_data_idx):
                         continue
+                prev_idx = prev_check_event_index[int(check_event_index)]
+                prev_flagged_same_qubit = (
+                    prev_idx >= 0 and int(check_row[prev_idx]) == 1
+                )
                 if args.require_prev_check_unflagged:
-                    prev_idx = prev_check_event_index[int(check_event_index)]
                     if prev_idx < 0:
                         continue
                     if int(check_row[prev_idx]) != 0:
                         continue
+                use_round1 = True
+                if (
+                    args.condition == "three_case"
+                    and args.truncate_lookback_on_consecutive_flag
+                    and prev_flagged_same_qubit
+                ):
+                    use_round1 = False
                 if args.condition == "three_case":
                     condition_key = classify_two_round_case(
                         rail_program,
                         det_row,
                         data_qubit,
                         check_round,
+                        include_round1=use_round1,
                     )
                 else:
                     inconsistent = has_pair_inconsistency(
@@ -573,12 +639,8 @@ def main() -> None:
                     vec = np.zeros(num_hypotheses, dtype=float)
                     mapped_index = -1
                     if use_full_lookback_bins:
-                        if args.condition == "three_case":
-                            prev_round = int(check_round) - 2
-                            curr_round = int(check_round) - 1
-                        else:
-                            prev_round = int(check_round) - 1
-                            curr_round = int(check_round)
+                        prev_round = int(check_round) - 1
+                        curr_round = int(check_round)
                         rows_by_round = {
                             prev_round: [],
                             curr_round: [],
@@ -590,8 +652,9 @@ def main() -> None:
                         for rr in rows_by_round:
                             rows_by_round[rr].sort(key=lambda row: int(row["onset_op_index"]))
                         onset_to_bin: dict[int, int] = {}
-                        for j, row in enumerate(rows_by_round[prev_round][:4]):
-                            onset_to_bin[int(row["onset_op_index"])] = j
+                        if use_round1:
+                            for j, row in enumerate(rows_by_round[prev_round][:4]):
+                                onset_to_bin[int(row["onset_op_index"])] = j
                         for j, row in enumerate(rows_by_round[curr_round][:4]):
                             onset_to_bin[int(row["onset_op_index"])] = 4 + j
                         mapped_index = onset_to_bin.get(true_onset_op, -1)
@@ -622,12 +685,8 @@ def main() -> None:
                         vec[-1] = 1.0
                 else:
                     if use_full_lookback_bins:
-                        if args.condition == "three_case":
-                            prev_round = int(check_round) - 2
-                            curr_round = int(check_round) - 1
-                        else:
-                            prev_round = int(check_round) - 1
-                            curr_round = int(check_round)
+                        prev_round = int(check_round) - 1
+                        curr_round = int(check_round)
                         rows_by_round = {
                             prev_round: [],
                             curr_round: [],
@@ -649,7 +708,8 @@ def main() -> None:
                                 onset_values[base_offset + j] = float(row["posterior_mass"])
                                 onset_priors[base_offset + j] = max(0.0, float(row["prior_mass"]))
 
-                        fill_round_bins(prev_round, 0)
+                        if use_round1:
+                            fill_round_bins(prev_round, 0)
                         fill_round_bins(curr_round, 4)
 
                         if args.conditioning_signal == "full_detectors":
@@ -662,9 +722,11 @@ def main() -> None:
                         else:
                             if args.condition == "three_case":
                                 for step_idx in range(1, 5):
-                                    p_prev = branch_two_round_case_likelihood(
-                                        int(schedule_type), 0, step_idx, onset_flip_probability, condition_key
-                                    )
+                                    p_prev = 0.0
+                                    if use_round1:
+                                        p_prev = branch_two_round_case_likelihood(
+                                            int(schedule_type), 0, step_idx, onset_flip_probability, condition_key
+                                        )
                                     p_curr = branch_two_round_case_likelihood(
                                         int(schedule_type), 1, step_idx, onset_flip_probability, condition_key
                                     )
@@ -873,6 +935,7 @@ def main() -> None:
                     "count": n,
                     "mean": mean.tolist(),
                     "mean_sum": float(np.sum(mean)),
+                    "bin_weight_sum": sum_by_condition_type[cond][qtype].tolist(),
                     "std": std.tolist(),
                     "error_bar": err.tolist(),
                     "labels": labels,
@@ -905,6 +968,7 @@ def main() -> None:
                 "count": n,
                 "mean": mean.tolist(),
                 "mean_sum": float(np.sum(mean)),
+                "bin_weight_sum": sum_by_condition_type[cond][qtype].tolist(),
                 "std": std.tolist(),
                 "error_bar": err.tolist(),
                 "labels": labels,
@@ -914,20 +978,100 @@ def main() -> None:
     if args.condition == "both":
         cond_descriptor = "inconsistency+consistency"
     elif args.condition == "three_case":
-        cond_descriptor = "inc_round1|inc_round2|consistent_both"
+        cond_descriptor = "00|10|01|11"
     else:
         cond_descriptor = args.condition
+    final_check_note = "excluding final-check round" if args.exclude_final_check_round else "including final-check round"
     fig.suptitle(
-        f"Rail Calibration Posterior ({num_hypotheses} hypotheses, d={args.distance}, rounds={args.rounds}, "
-        f"shots={total_shots_sampled}, p_e={args.erasure_prob}, q_fn={args.check_fn}, q_fp={args.check_fp}, "
-        f"mp=2, condition={cond_descriptor}, source={args.calibration_source})"
+        f"Rail Calibration Posterior | d={args.distance}, r={args.rounds}, shots={total_shots_sampled}, "
+        f"condition={cond_descriptor}, source={args.calibration_source} ({final_check_note})",
+        y=0.995,
     )
-    fig.tight_layout()
+    layout_top = 0.92 if len(condition_keys) > 1 else 0.90
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, layout_top))
 
     args.png_out.parent.mkdir(parents=True, exist_ok=True)
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
+    args.inverse_png_out.parent.mkdir(parents=True, exist_ok=True)
+    args.inverse_json_out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.png_out, dpi=220)
     plt.close(fig)
+
+    inverse_summary = {cond: {} for cond in condition_keys}
+    inverse_prob_by_condition_type = {
+        cond: {qt: np.zeros(num_hypotheses, dtype=float) for qt in qtypes}
+        for cond in condition_keys
+    }
+    inverse_y_top_by_condition = {cond: 0.0 for cond in condition_keys}
+    for qtype in qtypes:
+        denom = np.zeros(num_hypotheses, dtype=float)
+        for cond in condition_keys:
+            denom += sum_by_condition_type[cond][qtype]
+        for cond in condition_keys:
+            numer = sum_by_condition_type[cond][qtype]
+            prob = np.divide(
+                numer,
+                denom,
+                out=np.zeros_like(numer, dtype=float),
+                where=denom > 0,
+            )
+            inverse_prob_by_condition_type[cond][qtype] = prob
+            inverse_y_top_by_condition[cond] = max(
+                inverse_y_top_by_condition[cond], float(np.max(prob))
+            )
+            inverse_summary[cond][qtype] = {
+                "prob": prob.tolist(),
+                "prob_sum": float(np.sum(prob)),
+                "bin_weight_sum": numer.tolist(),
+                "onset_bin_total_weight": denom.tolist(),
+                "labels": labels,
+            }
+
+    inverse_y_lim_top_by_condition = {
+        cond: min(1.0, max(0.02, inverse_y_top_by_condition[cond] * 1.15))
+        for cond in condition_keys
+    }
+    if len(condition_keys) > 1:
+        n_rows = len(condition_keys)
+        inv_fig, inv_axes = plt.subplots(n_rows, 2, figsize=(14, 4.8 * n_rows), sharey="row")
+        for row, cond in enumerate(condition_keys):
+            for col, qtype in enumerate(qtypes):
+                ax = inv_axes[row, col]
+                prob = inverse_prob_by_condition_type[cond][qtype]
+                x = np.arange(len(labels))
+                ax.bar(x, prob, color="#1b9e77", alpha=0.9)
+                cond_label = condition_display_label(cond)
+                ax.set_title(f"{qtype} | {cond_label}")
+                ax.set_xticks(x)
+                ax.set_xticklabels(labels, rotation=30, ha="right")
+                ax.set_ylim(0.0, inverse_y_lim_top_by_condition[cond])
+                ax.grid(axis="y", alpha=0.3)
+            inv_axes[row, 0].set_ylabel("P(condition | onset)")
+    else:
+        inv_fig, inv_axes = plt.subplots(1, 2, figsize=(13, 5), sharey=True)
+        cond = condition_keys[0]
+        for i, qtype in enumerate(qtypes):
+            ax = inv_axes[i]
+            prob = inverse_prob_by_condition_type[cond][qtype]
+            x = np.arange(len(labels))
+            ax.bar(x, prob, color="#1b9e77", alpha=0.9)
+            cond_label = condition_display_label(cond)
+            ax.set_title(f"{qtype} | {cond_label}")
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels, rotation=30, ha="right")
+            ax.set_ylim(0.0, inverse_y_lim_top_by_condition[cond])
+            ax.grid(axis="y", alpha=0.3)
+        inv_axes[0].set_ylabel("P(condition | onset)")
+
+    inv_fig.suptitle(
+        f"Rail Calibration Inverse Posterior | d={args.distance}, r={args.rounds}, shots={total_shots_sampled}, "
+        f"condition={cond_descriptor}, source={args.calibration_source} ({final_check_note})",
+        y=0.995,
+    )
+    inv_layout_top = 0.92 if len(condition_keys) > 1 else 0.90
+    inv_fig.tight_layout(rect=(0.0, 0.0, 1.0, inv_layout_top))
+    inv_fig.savefig(args.inverse_png_out, dpi=220)
+    plt.close(inv_fig)
 
     payload = {
         "distance": args.distance,
@@ -948,7 +1092,11 @@ def main() -> None:
         "conditioning_signal": args.conditioning_signal,
         "isolate_single_flagged_data_check": bool(args.isolate_single_flagged_data_check),
         "require_prev_check_unflagged": bool(args.require_prev_check_unflagged),
+        "truncate_lookback_on_consecutive_flag": bool(
+            args.truncate_lookback_on_consecutive_flag
+        ),
         "full_interior_only": bool(args.full_interior_only),
+        "exclude_final_check_round": bool(args.exclude_final_check_round),
         "canonical_step_bins": bool(use_canonical_step_bins),
         "full_lookback_bins": bool(use_full_lookback_bins),
         "include_no_erasure": bool(args.include_no_erasure),
@@ -959,12 +1107,79 @@ def main() -> None:
         "min_events_per_type": int(args.min_events_per_type),
         "hypothesis_count": num_hypotheses,
         "hypotheses": labels,
+        "metadata": {
+            "distance": int(args.distance),
+            "rounds": int(args.rounds),
+            "shots_requested": int(args.shots),
+            "shots_sampled": int(total_shots_sampled),
+            "seed": int(args.seed),
+            "erasure_prob": float(args.erasure_prob),
+            "check_false_negative_prob": float(args.check_fn),
+            "check_false_positive_prob": float(args.check_fp),
+            "rounds_per_check": int(args.rounds_per_check),
+            "condition": args.condition,
+            "conditions": condition_keys,
+            "calibration_source": args.calibration_source,
+            "inconsistency_window": args.inconsistency_window,
+            "full_lookback_bins": bool(use_full_lookback_bins),
+            "include_no_erasure": bool(args.include_no_erasure),
+            "exclude_final_check_round": bool(args.exclude_final_check_round),
+            "final_check_round_note": (
+                "Final-round checks excluded from calibration statistics."
+                if args.exclude_final_check_round
+                else "Final-round checks included in calibration statistics."
+            ),
+        },
         "summary": summary,
     }
     args.json_out.write_text(json.dumps(payload, indent=2))
 
+    inverse_payload = {
+        "distance": args.distance,
+        "rounds": args.rounds,
+        "shots_requested": args.shots,
+        "shots_sampled": total_shots_sampled,
+        "seed": args.seed,
+        "erasure_prob": float(args.erasure_prob),
+        "check_false_negative_prob": float(args.check_fn),
+        "check_false_positive_prob": float(args.check_fp),
+        "rounds_per_check": args.rounds_per_check,
+        "condition": args.condition,
+        "conditions": condition_keys,
+        "hypothesis_count": num_hypotheses,
+        "hypotheses": labels,
+        "calibration_source": args.calibration_source,
+        "exclude_final_check_round": bool(args.exclude_final_check_round),
+        "definition": "P(condition | onset_bin)",
+        "metadata": {
+            "distance": int(args.distance),
+            "rounds": int(args.rounds),
+            "shots_requested": int(args.shots),
+            "shots_sampled": int(total_shots_sampled),
+            "seed": int(args.seed),
+            "erasure_prob": float(args.erasure_prob),
+            "check_false_negative_prob": float(args.check_fn),
+            "check_false_positive_prob": float(args.check_fp),
+            "rounds_per_check": int(args.rounds_per_check),
+            "condition": args.condition,
+            "conditions": condition_keys,
+            "calibration_source": args.calibration_source,
+            "include_no_erasure": bool(args.include_no_erasure),
+            "exclude_final_check_round": bool(args.exclude_final_check_round),
+            "final_check_round_note": (
+                "Final-round checks excluded from calibration statistics."
+                if args.exclude_final_check_round
+                else "Final-round checks included in calibration statistics."
+            ),
+        },
+        "summary": inverse_summary,
+    }
+    args.inverse_json_out.write_text(json.dumps(inverse_payload, indent=2))
+
     print(f"Saved PNG: {args.png_out}")
     print(f"Saved JSON: {args.json_out}")
+    print(f"Saved inverse PNG: {args.inverse_png_out}")
+    print(f"Saved inverse JSON: {args.inverse_json_out}")
     for cond in condition_keys:
         for qtype in qtypes:
             cond_label = condition_display_label(cond)

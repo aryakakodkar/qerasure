@@ -127,6 +127,11 @@ if(BUILD_TESTING)
     COMMAND ${QERASURE_TEST_PYTHON_EXECUTABLE}
             ${CMAKE_SOURCE_DIR}/tests/python_surface_batch_decode_failure_artifact_test.py
   )
+  add_test(
+    NAME python_rail_decode_failure_artifact_test
+    COMMAND ${QERASURE_TEST_PYTHON_EXECUTABLE}
+            ${CMAKE_SOURCE_DIR}/tests/python_rail_decode_failure_artifact_test.py
+  )
 endif()
 
 if(QERASURE_BUILD_PYTHON)

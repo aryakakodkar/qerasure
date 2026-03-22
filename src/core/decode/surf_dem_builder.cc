@@ -121,6 +121,37 @@ uint64_t make_op_qubit_key(uint32_t op_index, uint32_t qubit) {
 	return (static_cast<uint64_t>(op_index) << 32) | qubit;
 }
 
+void normalize_pauli_channel_probs(double* p_x, double* p_y, double* p_z) {
+	constexpr double kTolerance = 1e-12;
+	*p_x = std::clamp(*p_x, 0.0, 1.0);
+	*p_y = std::clamp(*p_y, 0.0, 1.0);
+	*p_z = std::clamp(*p_z, 0.0, 1.0);
+	double total = *p_x + *p_y + *p_z;
+	if (total <= 0.0) {
+		*p_x = 0.0;
+		*p_y = 0.0;
+		*p_z = 0.0;
+		return;
+	}
+	if (total > 1.0) {
+		if (total <= 1.0 + kTolerance) {
+			const double excess = total - 1.0;
+			if (*p_x >= *p_y && *p_x >= *p_z) {
+				*p_x = std::max(0.0, *p_x - excess);
+			} else if (*p_y >= *p_x && *p_y >= *p_z) {
+				*p_y = std::max(0.0, *p_y - excess);
+			} else {
+				*p_z = std::max(0.0, *p_z - excess);
+			}
+		} else {
+			const double scale = 1.0 / total;
+			*p_x *= scale;
+			*p_y *= scale;
+			*p_z *= scale;
+		}
+	}
+}
+
 }  // namespace
 
 SurfDemBuilder::SurfDemBuilder(const circuit::CompiledErasureProgram& program) : program_(program) {
@@ -728,15 +759,16 @@ stim::Circuit SurfDemBuilder::build_decoded_circuit(
 			}
 		}
 
-		for (const SpreadInjectionEvent& event : buckets[op_index]) {
-			const double p_x = std::clamp(event.p_x, 0.0, 1.0);
-			const double p_y = std::clamp(event.p_y, 0.0, 1.0);
-			const double p_z = std::clamp(event.p_z, 0.0, 1.0);
-			if (p_x > 0.0 || p_y > 0.0 || p_z > 0.0) {
-				injected.safe_append_u(
-					"PAULI_CHANNEL_1", {event.target_qubit}, {p_x, p_y, p_z});
+			for (const SpreadInjectionEvent& event : buckets[op_index]) {
+				double p_x = event.p_x;
+				double p_y = event.p_y;
+				double p_z = event.p_z;
+				normalize_pauli_channel_probs(&p_x, &p_y, &p_z);
+				if (p_x > 0.0 || p_y > 0.0 || p_z > 0.0) {
+					injected.safe_append_u(
+						"PAULI_CHANNEL_1", {event.target_qubit}, {p_x, p_y, p_z});
+				}
 			}
-		}
 	}
 
 	return injected;
@@ -796,13 +828,14 @@ std::string SurfDemBuilder::build_decoded_circuit_text(
 			}
 		}
 
-		for (const SpreadInjectionEvent& event : buckets[op_index]) {
-			const double p_x = std::clamp(event.p_x, 0.0, 1.0);
-			const double p_y = std::clamp(event.p_y, 0.0, 1.0);
-			const double p_z = std::clamp(event.p_z, 0.0, 1.0);
-			if (p_x <= 0.0 && p_y <= 0.0 && p_z <= 0.0) {
-				continue;
-			}
+			for (const SpreadInjectionEvent& event : buckets[op_index]) {
+				double p_x = event.p_x;
+				double p_y = event.p_y;
+				double p_z = event.p_z;
+				normalize_pauli_channel_probs(&p_x, &p_y, &p_z);
+				if (p_x <= 0.0 && p_y <= 0.0 && p_z <= 0.0) {
+					continue;
+				}
 			if (!first_line) {
 				out << "\n";
 			}

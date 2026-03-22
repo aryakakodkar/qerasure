@@ -14,6 +14,33 @@ void bind_rail_surface_dem_builder(py::module_& m) {
           py::arg("program"),
           py::keep_alive<1, 2>())
       .def(
+          "set_calibrated_onset_posteriors",
+          [](decode::RailSurfaceDemBuilder& decoder,
+             double erasure_probability,
+             const std::vector<std::vector<std::vector<double>>>& posteriors,
+             bool boost_nonzero_with_pe2) {
+            decoder.set_calibrated_onset_posteriors(
+                erasure_probability, posteriors, boost_nonzero_with_pe2);
+          },
+          py::arg("erasure_probability"),
+          py::arg("posteriors"),
+          py::arg("boost_nonzero_with_pe2") = true)
+      .def(
+          "set_final_round_calibrated_onset_posteriors",
+          [](decode::RailSurfaceDemBuilder& decoder,
+             double erasure_probability,
+             const std::vector<std::vector<std::vector<double>>>& posteriors,
+             bool boost_nonzero_with_pe2) {
+            decoder.set_final_round_calibrated_onset_posteriors(
+                erasure_probability, posteriors, boost_nonzero_with_pe2);
+          },
+          py::arg("erasure_probability"),
+          py::arg("posteriors"),
+          py::arg("boost_nonzero_with_pe2") = true)
+      .def(
+          "clear_calibrated_onset_posteriors",
+          &decode::RailSurfaceDemBuilder::clear_calibrated_onset_posteriors)
+      .def(
           "build_decoded_circuit",
           [](const decode::RailSurfaceDemBuilder& decoder,
              const std::vector<uint8_t>& check_results,

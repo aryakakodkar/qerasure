@@ -613,6 +613,46 @@ class RailCalibrationSampler:
             np.asarray(onset_ops, dtype=np.int32),
         )
 
+    def sample_debug(
+        self,
+        num_shots: int,
+        seed: int,
+        num_threads: int = 1,
+    ):
+        """Sample with per-check latent debug metadata for onset-pair analysis."""
+        shots = int(num_shots)
+        threads = int(num_threads)
+        if shots < 0:
+            raise ValueError("num_shots must be non-negative")
+        if threads < 0:
+            raise ValueError("num_threads must be non-negative")
+        (
+            dets,
+            obs,
+            checks,
+            onset_ops,
+            onset_is_pair,
+            onset_companion_qubit,
+            onset_companion_pauli,
+            erasure_age,
+            chosen_z_rail,
+        ) = self._cpp_sampler.sample_syndromes_debug(
+            shots,
+            _normalize_u32_seed(seed),
+            threads,
+        )
+        return (
+            np.asarray(dets, dtype=np.uint8),
+            np.asarray(obs, dtype=np.uint8),
+            np.asarray(checks, dtype=np.uint8),
+            np.asarray(onset_ops, dtype=np.int32),
+            np.asarray(onset_is_pair, dtype=np.uint8),
+            np.asarray(onset_companion_qubit, dtype=np.int32),
+            np.asarray(onset_companion_pauli, dtype=np.int8),
+            np.asarray(erasure_age, dtype=np.uint32),
+            np.asarray(chosen_z_rail, dtype=np.int32),
+        )
+
 
 class SurfDemBuilder:
     """Python wrapper for the surface-code decoded-circuit/DEM builder."""
@@ -671,6 +711,47 @@ class RailSurfaceDemBuilder:
         else:
             cpp_program = program
         self._cpp_builder = _CppRailSurfaceDemBuilder(cpp_program)
+
+    def set_calibrated_onset_posteriors(
+        self,
+        erasure_probability: float,
+        posteriors,
+        boost_nonzero_with_pe2: bool = True,
+    ) -> None:
+        table = [
+            [
+                [float(v) for v in onset_bins]
+                for onset_bins in condition_rows
+            ]
+            for condition_rows in posteriors
+        ]
+        self._cpp_builder.set_calibrated_onset_posteriors(
+            float(erasure_probability),
+            table,
+            bool(boost_nonzero_with_pe2),
+        )
+
+    def clear_calibrated_onset_posteriors(self) -> None:
+        self._cpp_builder.clear_calibrated_onset_posteriors()
+
+    def set_final_round_calibrated_onset_posteriors(
+        self,
+        erasure_probability: float,
+        posteriors,
+        boost_nonzero_with_pe2: bool = True,
+    ) -> None:
+        table = [
+            [
+                [float(v) for v in onset_bins]
+                for onset_bins in condition_rows
+            ]
+            for condition_rows in posteriors
+        ]
+        self._cpp_builder.set_final_round_calibrated_onset_posteriors(
+            float(erasure_probability),
+            table,
+            bool(boost_nonzero_with_pe2),
+        )
 
     def build_decoded_circuit(
         self,
