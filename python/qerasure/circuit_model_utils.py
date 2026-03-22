@@ -22,6 +22,9 @@ _CppRailCalibrationSampler = cpp.RailCalibrationSampler
 _CppRailSurfaceDemBuilder = cpp.RailSurfaceDemBuilder
 _UINT32_MAX = (1 << 32) - 1
 _STIM_TEXT_FALLBACK_WARNED = False
+_PAULI_CHANNEL_1_LINE_RE = re.compile(
+    r"^(\s*PAULI_CHANNEL_1\()([^,]+),([^,]+),([^)]+)\)(.*)$"
+)
 
 
 def _normalize_u32_seed(seed: int) -> int:
@@ -34,6 +37,57 @@ def _validate_probability(value: float, *, name: str) -> float:
     if p < 0.0 or p > 1.0:
         raise ValueError(f"{name} must be in [0, 1], got {p}.")
     return p
+
+
+def _sanitize_pauli_channel_text(circuit_text: str) -> str:
+    """Clamp/renormalize PAULI_CHANNEL_1 triples to avoid parse-time sum>1 from rounding."""
+    changed = False
+    out_lines: list[str] = []
+    for line in circuit_text.splitlines():
+        match = _PAULI_CHANNEL_1_LINE_RE.match(line)
+        if match is None:
+            out_lines.append(line)
+            continue
+        try:
+            px = float(match.group(2).strip())
+            py = float(match.group(3).strip())
+            pz = float(match.group(4).strip())
+        except ValueError:
+            out_lines.append(line)
+            continue
+
+        probs = [min(1.0, max(0.0, px)), min(1.0, max(0.0, py)), min(1.0, max(0.0, pz))]
+        total = probs[0] + probs[1] + probs[2]
+        if total > 1.0:
+            # Keep behavior close to the C++ normalization used before text emission.
+            if total <= 1.0 + 1e-9:
+                idx = int(np.argmax(probs))
+                probs[idx] = max(0.0, probs[idx] - (total - 1.0))
+            else:
+                scale = 1.0 / total
+                probs = [p * scale for p in probs]
+
+        reparsed_line = (
+            f"{match.group(1)}{probs[0]:.17g}, {probs[1]:.17g}, {probs[2]:.17g}){match.group(5)}"
+        )
+        changed = changed or (reparsed_line != line)
+        out_lines.append(reparsed_line)
+    if not changed:
+        return circuit_text
+    return "\n".join(out_lines)
+
+
+def _build_stim_circuit_from_text(stim_module, circuit_text: str):
+    try:
+        return stim_module.Circuit(circuit_text)
+    except ValueError as exc:
+        msg = str(exc)
+        if "PAULI_CHANNEL_1" not in msg or "sum to more than 1" not in msg:
+            raise
+        sanitized = _sanitize_pauli_channel_text(circuit_text)
+        if sanitized == circuit_text:
+            raise
+        return stim_module.Circuit(sanitized)
 
 
 def _pauli_channel_from_components(px: float, py: float, pz: float, *, slot_name: str) -> PauliChannel:
@@ -689,7 +743,10 @@ class SurfDemBuilder:
                     file=sys.stderr,
                 )
                 _STIM_TEXT_FALLBACK_WARNED = True
-            return stim.Circuit(str(self._cpp_builder.build_decoded_circuit_text(checks, bool(verbose))))
+            return _build_stim_circuit_from_text(
+                stim,
+                str(self._cpp_builder.build_decoded_circuit_text(checks, bool(verbose))),
+            )
 
     def find_probability_violations(self, check_results: Sequence[int]):
         """Return PAULI_CHANNEL_1 events whose disjoint probabilities sum above 1."""
@@ -773,8 +830,9 @@ class RailSurfaceDemBuilder:
         except TypeError:
             # Fallback for environments where pybind's stim::Circuit caster isn't
             # registered across extension-module boundaries.
-            return stim.Circuit(
-                str(self._cpp_builder.build_decoded_circuit_text(checks, detectors, bool(verbose)))
+            return _build_stim_circuit_from_text(
+                stim,
+                str(self._cpp_builder.build_decoded_circuit_text(checks, detectors, bool(verbose))),
             )
 
     def build_decoded_circuit_text(

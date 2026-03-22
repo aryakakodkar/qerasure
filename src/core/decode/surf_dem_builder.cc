@@ -782,6 +782,7 @@ std::string SurfDemBuilder::build_decoded_circuit_text(
 		compute_spread_injections(check_results, verbose, &skippable_reweights);
 
 	std::ostringstream out;
+	out << std::setprecision(17);
 	bool first_line = true;
 	for (uint32_t op_index = 0; op_index < program_.operation_groups.size(); ++op_index) {
 		const circuit::OperationGroup& op_group = program_.operation_groups[op_index];

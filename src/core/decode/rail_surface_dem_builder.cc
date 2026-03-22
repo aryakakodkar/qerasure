@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -1050,6 +1051,7 @@ std::string RailSurfaceDemBuilder::build_decoded_circuit_text(
       check_results, detector_samples, verbose, &skippable_reweights);
 
   std::ostringstream out;
+  out << std::setprecision(17);
   bool first_line = true;
   for (uint32_t op_index = 0; op_index < program_.operation_groups.size(); ++op_index) {
     const circuit::OperationGroup& op_group = program_.operation_groups[op_index];
